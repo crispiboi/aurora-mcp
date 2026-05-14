@@ -14,6 +14,11 @@ from mcp.server.stdio import stdio_server
 from mcp.types import TextContent, Tool
 import mcp.types as mcp_types
 
+from jump_network import (
+    tool_systems_near,
+    tool_refresh_jump_network,
+)
+
 # ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
@@ -322,6 +327,35 @@ async def list_tools() -> list[Tool]:
         },
     ))
 
+    # --- jump network tools ---
+    tools.append(Tool(
+        name="systems_near",
+        description=(
+            "Returns all systems reachable within N hops of a source system using "
+            "a Dijkstra graph traversal over the jump network. Much faster than the "
+            "recursive SQL approach. Use this to answer 'systems near X rich in Y' "
+            "queries — call this first, then join the returned system IDs against "
+            "mineral or colony data."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "source_system_id": {"type": "integer", "description": "SystemID to search outward from"},
+                "max_hops": {"type": "integer", "description": "Maximum jump hops (default 8, max practical ~20)"},
+            },
+            "required": ["source_system_id"],
+        },
+    ))
+    tools.append(Tool(
+        name="refresh_jump_network",
+        description=(
+            "Invalidates the cached jump network. Call this after survey vessels "
+            "discover new jump points so the next routing call re-fetches from the DB. "
+            "Takes no arguments — game context is resolved automatically."
+        ),
+        inputSchema={"type": "object", "properties": {}, "required": []},
+    ))
+
     return tools
 
 
@@ -370,6 +404,10 @@ def _dispatch(name: str, args: dict) -> str:
         return _tool_delete_query(args)
     if name == "promote_query":
         return _tool_promote_query(args)
+
+    # jump network tools
+    if name in ("systems_near", "refresh_jump_network"):
+        return _dispatch_jump_network(name, args)
 
     # registered queries
     if name in _queries.get("queries", {}):
@@ -523,7 +561,54 @@ _BUILTIN_TOOLS = {
     "execute_sql",
     "describe_table", "list_all_tables", "list_safe_tables", "list_queries",
     "register_query", "update_query", "delete_query", "promote_query",
+    "systems_near", "refresh_jump_network",
 }
+
+def _dispatch_jump_network(name: str, args: dict) -> str:
+    try:
+        ctx = ensure_context()
+    except RuntimeError as e:
+        return str(e)
+
+    game_id = ctx["game_id"]
+    race_id = ctx["race_id"]
+
+    if name == "refresh_jump_network":
+        return tool_refresh_jump_network(game_id=game_id)
+
+    try:
+        conn = get_db()
+    except sqlite3.OperationalError as e:
+        if "locked" in str(e).lower():
+            return "Aurora database is locked. Save the game first."
+        return f"Database error: {e}"
+
+    try:
+        def db_execute(sql: str, params: list):
+            return conn.execute(sql, params).fetchall()
+
+        if name == "systems_near":
+            src = int(args["source_system_id"])
+            hops = int(args.get("max_hops", 8))
+            return tool_systems_near(
+                source_system_id=src,
+                game_id=game_id,
+                race_id=race_id,
+                db_execute=db_execute,
+                max_hops=hops,
+            )
+
+        return f"Unknown jump network tool: '{name}'"
+
+    except (KeyError, ValueError, TypeError) as e:
+        return f"Invalid arguments for '{name}': {e}"
+    except sqlite3.OperationalError as e:
+        if "locked" in str(e).lower():
+            return "Aurora database is locked. Save the game first."
+        return f"Database error: {e}"
+    finally:
+        conn.close()
+
 
 def _save_queries() -> None:
     with open(QUERIES_PATH, "w", encoding="utf-8") as f:

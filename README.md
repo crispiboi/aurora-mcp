@@ -2,7 +2,7 @@
 
 A read-only MCP (Model Context Protocol) server that lets Claude query your Aurora 4x campaign database directly. Claude can look up colonies, fleets, minerals, commanders, ordnance, and more — and can register, edit, and promote new queries against your live DB without restarting.
 
-AI/LLM DISCLAIMER: This tool was generated with the assistance of claude code by a user who has a solid grasp on the game. This tool is built specificially to query the DB, and nothing else. If you write to the DB you may cause unintended consquence and will not be able to receive support by the larger community. 
+AI/LLM DISCLAIMER: This tool was generated with the assistance of claude code by a user who has a solid grasp on the game. This tool is built specificially to query the DB, and nothing else. If you write to the DB you may cause unintended consquence and will not be able to receive support by the larger community.
 
 ## Prerequisites
 
@@ -49,6 +49,16 @@ D:\Aurora\AuroraDB.db    ← example; your install path may differ
 ```
 
 You must set `AURORA_DB_PATH` to this file's full path in the config below. There is no default that will work out of the box.
+
+---
+
+## Getting started
+
+Once the server is connected, start a new Claude Code session and say:
+
+> Please verify my current game and give me a description of the available tools.
+
+Claude will call `get_session_context` to confirm the right campaign is loaded, then summarize what each tool does. From there you can ask natural-language questions about your empire — minerals, colonies, fleets, commanders, ordnance — and Claude will pick the right tools automatically.
 
 ---
 
@@ -141,21 +151,34 @@ Claude should return your GameID, GameName, RaceID, and RaceName. If it does, yo
 | `delete_query` | Removes a query from `queries.json` by name. Live immediately. |
 | `promote_query` | Marks a `DRAFT_` query as verified and renames it by stripping the `DRAFT_` prefix. Live immediately. |
 
+### Jump network
+
+| Tool | Description |
+| --- | --- |
+| `systems_near` | Returns all systems within N jump hops of a source system using Dijkstra traversal. Use this first for "what's near X" queries, then join the returned system IDs against mineral or colony data. Params: `source_system_id`, `max_hops` (default 8). |
+| `refresh_jump_network` | Invalidates the cached jump network. Call after survey vessels discover new jump points so the next routing call re-fetches from the DB. |
+
 ### Registered queries
 
-Queries are stored in `queries.json` and loaded on every request — no restart needed after changes. Queries marked **DRAFT** are unverified and may need column name tweaks for your specific Aurora version.
+Queries are stored in `queries.json` and loaded on every request — no restart needed after changes.
 
-| Query | Status | Params | Description |
-| --- | --- | --- | --- |
-| `get_session_context` | DRAFT | — | Active game and race info |
-| `game_log` | verified | `days`, `hours` | Recent game log entries, looking back N days or hours |
-| `mineral_survey` | verified | — | Full mineral survey — every surveyed body with amount, accessibility, and accessible amount |
-| `mineral_survey_by_system` | verified | `mineral_name` | Minerals summarised by system; filter by mineral name or leave empty for all |
-| `colony_report` | verified | — | Full colony report: population, species, stockpiles, installations, and production queues |
-| `commander_assignment` | verified | `name_fragment` | Commander details by name fragment — type, rank, assignment, homeworld, and career history |
-| `DRAFT_ship_design_report` | DRAFT | — | Full ship design report — propulsion, armour, sensors, capacity, EW, and component manifest |
-| `DRAFT_class_ordnance_templates` | DRAFT | `class_name` | Ordnance load-out templates per class with full missile stats |
-| `DRAFT_missile_catalogue` | DRAFT | `missile_name` | Complete missile catalogue — speed, range, warhead, ECM/ECCM, staging, and current stock |
+| Query | Params | Description |
+| --- | --- | --- |
+| `get_session_context` | — | Active game and race info |
+| `game_log` | `days`, `hours` | Recent game log entries, looking back N days or hours |
+| `mineral_survey` | — | Body-level mineral survey — every surveyed body with amount, accessibility, and accessible amount |
+| `mineral_survey_by_system` | `mineral_name` | Minerals summarised by system; filter by mineral name or leave empty for all |
+| `minerals_near_system` | `source_system_id`, `max_hops`, `mineral_name` | Mineral totals for all systems within N hops of a given system |
+| `colony_report` | — | Full colony report: population, species, stockpiles, installations, and production queues |
+| `commander_assignment` | `name_fragment` | Commander details by name fragment — type, rank, assignment, homeworld, and career history |
+| `commander_profile` | `name_fragment` | Full RP/lore profile — skills, traits, medals, career history, health, loyalty |
+| `ship_design_report` | — | Full ship design report — propulsion, armour, sensors, capacity, EW, component manifest, and capture provenance |
+| `ship_class_classifications` | — | Quick hull classification lookup — class name, type (BB/CA/DD etc), military vs commercial |
+| `class_ordnance_templates` | `class_name` | Ordnance load-out templates per class with full missile stats and colony stock |
+| `missile_catalogue` | `missile_name` | Complete missile catalogue — speed, range, warhead, ECM/ECCM, staging, and total stock |
+| `colony_ordnance_stockpiles` | `missile_name` | Missile stockpiles held at colonies — stock count, size, and key combat stats |
+| `ship_ordnance_status` | — | Per-ship ordnance status — loaded vs template vs deficit, with ship location and collier flag |
+| `system_distances` | `source_system_id`, `destination_system_id`, `fleet_name` | Shortest route between two systems with hop-by-hop distance and per-class fuel cost |
 
 ---
 
