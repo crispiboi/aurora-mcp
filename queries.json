@@ -1,0 +1,293 @@
+{
+  "unsafe_tables": [
+    "FCT_GameState",
+    "FCT_Command",
+    "FCT_EventLog_Temp"
+  ],
+  "unsafe_table_patterns": [
+    "_Temp"
+  ],
+  "schema": {
+    "FCT_Game": {
+      "pk": "GameID",
+      "fk": {},
+      "safe_columns": [
+        "GameID",
+        "GameName"
+      ],
+      "notes": "Sample game always present; exclude by GameName != 'Sample' when resolving active campaign."
+    },
+    "FCT_Race": {
+      "pk": "RaceID",
+      "fk": {
+        "GameID": "FCT_Game.GameID"
+      },
+      "safe_columns": [
+        "RaceID",
+        "GameID",
+        "RaceName",
+        "NPR"
+      ],
+      "notes": "NPR=0 is the player race. Confirm MIN vs MAX RaceID for player on first boot."
+    },
+    "FCT_System": {
+      "pk": "SystemID",
+      "fk": {},
+      "safe_columns": [
+        "SystemID",
+        "SystemName"
+      ],
+      "notes": ""
+    },
+    "FCT_Planet": {
+      "pk": "PlanetID",
+      "fk": {
+        "SystemID": "FCT_System.SystemID"
+      },
+      "safe_columns": [
+        "PlanetID",
+        "SystemID",
+        "PlanetName"
+      ],
+      "notes": ""
+    },
+    "FCT_Population": {
+      "pk": "PopulationID",
+      "fk": {
+        "RaceID": "FCT_Race.RaceID",
+        "PlanetID": "FCT_Planet.PlanetID",
+        "SystemID": "FCT_System.SystemID"
+      },
+      "safe_columns": [
+        "PopulationID",
+        "RaceID",
+        "PlanetID",
+        "SystemID",
+        "Population"
+      ],
+      "notes": "Confirm population unit (thousands vs raw count)."
+    },
+    "FCT_TaskGroup": {
+      "pk": "TaskGroupID",
+      "fk": {
+        "RaceID": "FCT_Race.RaceID"
+      },
+      "safe_columns": [
+        "TaskGroupID",
+        "RaceID",
+        "TaskGroupName"
+      ],
+      "notes": ""
+    },
+    "FCT_Ship": {
+      "pk": "ShipID",
+      "fk": {
+        "TaskGroupID": "FCT_TaskGroup.TaskGroupID",
+        "RaceID": "FCT_Race.RaceID"
+      },
+      "safe_columns": [
+        "ShipID",
+        "RaceID",
+        "TaskGroupID",
+        "ShipName"
+      ],
+      "notes": "Confirm join column to FCT_ShipDesign: ShipDesignID or ClassID."
+    },
+    "FCT_ShipDesign": {
+      "pk": "ShipDesignID",
+      "fk": {
+        "RaceID": "FCT_Race.RaceID"
+      },
+      "safe_columns": [
+        "ShipDesignID",
+        "RaceID",
+        "ClassName"
+      ],
+      "notes": ""
+    },
+    "FCT_MineralDeposit": {
+      "pk": "MineralDepositID",
+      "fk": {
+        "PlanetID": "FCT_Planet.PlanetID"
+      },
+      "safe_columns": [
+        "MineralDepositID",
+        "PlanetID",
+        "MineralID",
+        "Amount"
+      ],
+      "notes": "Confirm mineral name lookup table name."
+    },
+    "FCT_Mineral": {
+      "pk": "MineralID",
+      "fk": {},
+      "safe_columns": [
+        "MineralID",
+        "MineralName"
+      ],
+      "notes": "Lookup table \u2014 no FK."
+    },
+    "FCT_Research": {
+      "pk": "ResearchID",
+      "fk": {
+        "RaceID": "FCT_Race.RaceID"
+      },
+      "safe_columns": [
+        "ResearchID",
+        "RaceID"
+      ],
+      "notes": ""
+    },
+    "FCT_JumpPoint": {
+      "pk": "JumpPointID",
+      "fk": {
+        "SystemID": "FCT_System.SystemID"
+      },
+      "safe_columns": [
+        "JumpPointID",
+        "SystemID"
+      ],
+      "notes": "Check for self-referencing FK to destination SystemID."
+    }
+  },
+  "queries": {
+    "get_session_context": {
+      "description": "Returns the GameID, GameName, RaceID, and RaceName the server has resolved for this session. Call this first to confirm the correct campaign is loaded before querying game state.",
+      "params": [],
+      "sql": "SELECT g.GameID, g.GameName, r.RaceID, r.RaceName FROM FCT_Game g JOIN FCT_Race r ON r.GameID = g.GameID WHERE g.GameID = :game_id AND r.RaceID = :race_id",
+      "tables_used": [
+        "FCT_Game",
+        "FCT_Race"
+      ],
+      "notes": "Column names need verification on first boot.",
+      "verified": false,
+      "added": "2026-05-12"
+    },
+    "game_log": {
+      "description": "Fetches game log entries for the player race, looking back a specified number of in-game days or hours. Pass either days or hours (not both); the other should be 0.",
+      "params": [
+        "days",
+        "hours"
+      ],
+      "sql": "SELECT EventType, MessageText, Time, DATE((SELECT StartYear || '-01-01' FROM FCT_Game WHERE GameID = :game_id), '+' || CAST(CAST(Time AS INTEGER) AS TEXT) || ' seconds') AS GameDate FROM FCT_GameLog WHERE RaceID = :race_id AND GameID = :game_id AND Time >= (SELECT MAX(Time) - (:days * 86400 + :hours * 3600) FROM FCT_GameLog WHERE RaceID = :race_id AND GameID = :game_id) ORDER BY Time DESC",
+      "tables_used": [
+        "FCT_GameLog",
+        "FCT_Game"
+      ],
+      "notes": "Time is in seconds since game start. 1 day = 86400 seconds, 1 hour = 3600 seconds. StartYear pulled dynamically from FCT_Game.",
+      "verified": true,
+      "added": "2026-05-12"
+    },
+    "mineral_survey": {
+      "description": "Detailed mineral survey results for all surveyed bodies, showing mineral name, amount, accessibility, and accessible amount for the player race.",
+      "params": [],
+      "sql": "SELECT DATE((SELECT StartYear || '-01-01' FROM FCT_Game WHERE GameID = :game_id), '+' || CAST(CAST((SELECT MAX(Time) FROM FCT_GameLog WHERE GameID = :game_id AND RaceID = :race_id) AS INTEGER) AS TEXT) || ' seconds') AS \"Game Date\", sys.Name AS SystemName, surv.SystemBodyID, CASE WHEN sysbody.Name IS NOT NULL AND TRIM(sysbody.Name) != '' THEN sysbody.Name WHEN sysbody.OrbitNumber > 0 THEN sys.Name || ' ' || sysbody.PlanetNumber || '.' || sysbody.OrbitNumber ELSE sys.Name || ' ' || sysbody.PlanetNumber END AS BodyName, CASE dep.MaterialID WHEN 1 THEN 'Duranium' WHEN 2 THEN 'Neutronium' WHEN 3 THEN 'Corbomite' WHEN 4 THEN 'Tritanium' WHEN 5 THEN 'Boronide' WHEN 6 THEN 'Mercassium' WHEN 7 THEN 'Vendarite' WHEN 8 THEN 'Sorium' WHEN 9 THEN 'Uridium' WHEN 10 THEN 'Corundium' WHEN 11 THEN 'Gallicite' END AS MineralName, ROUND(dep.Amount, 0) AS Amount, ROUND(dep.Accessibility, 2) AS Accessibility, ROUND(dep.Amount * dep.Accessibility, 0) AS AccessibleAmount, dep.HalfOriginalAmount, dep.OriginalAcc FROM FCT_SystemBodySurveys surv INNER JOIN FCT_MineralDeposit dep ON surv.SystemBodyID = dep.SystemBodyID AND surv.GameID = dep.GameID INNER JOIN FCT_RaceSysSurvey sys ON dep.SystemID = sys.SystemID AND surv.GameID = dep.GameID AND surv.RaceID = sys.RaceID LEFT OUTER JOIN FCT_SystemBodyName sysbodyname ON dep.SystemBodyID = sysbodyname.SystemBodyID AND surv.GameID = dep.GameID LEFT OUTER JOIN FCT_SystemBody sysbody ON dep.SystemBodyID = sysbody.SystemBodyID AND surv.GameID = dep.GameID WHERE surv.RaceID = :race_id AND surv.GameID = :game_id AND dep.Amount > 0",
+      "tables_used": [
+        "FCT_SystemBodySurveys",
+        "FCT_MineralDeposit",
+        "FCT_RaceSysSurvey",
+        "FCT_SystemBodyName",
+        "FCT_SystemBody",
+        "FCT_GameLog",
+        "FCT_Game"
+      ],
+      "notes": "GameID and RaceID injected automatically. StartYear pulled from FCT_Game. AccessibleAmount = Amount * Accessibility. BodyName falls back to orbital notation if no name is set.",
+      "verified": true,
+      "added": "2026-05-12"
+    },
+    "mineral_survey_by_system": {
+      "description": "Summarizes minerals by system and mineral type, showing total amount, average accessibility, and total accessible amount across all surveyed bodies. Optionally filter by mineral name (e.g. 'Gallicite'). Leave mineral_name empty to get all minerals.",
+      "params": [
+        "mineral_name"
+      ],
+      "sql": "SELECT sys.Name AS SystemName, COUNT(DISTINCT dep.SystemBodyID) AS NumBodies, CASE dep.MaterialID WHEN 1 THEN 'Duranium' WHEN 2 THEN 'Neutronium' WHEN 3 THEN 'Corbomite' WHEN 4 THEN 'Tritanium' WHEN 5 THEN 'Boronide' WHEN 6 THEN 'Mercassium' WHEN 7 THEN 'Vendarite' WHEN 8 THEN 'Sorium' WHEN 9 THEN 'Uridium' WHEN 10 THEN 'Corundium' WHEN 11 THEN 'Gallicite' END AS MineralName, ROUND(SUM(dep.Amount), 0) AS TotalAmount, ROUND(AVG(dep.Amount), 0) AS AvgAmountPerBody, ROUND(AVG(dep.Accessibility), 2) AS AvgAccessibility, ROUND(SUM(dep.Amount * dep.Accessibility), 0) AS TotalAccessibleAmount FROM FCT_SystemBodySurveys surv INNER JOIN FCT_MineralDeposit dep ON surv.SystemBodyID = dep.SystemBodyID AND surv.GameID = dep.GameID INNER JOIN FCT_RaceSysSurvey sys ON dep.SystemID = sys.SystemID AND surv.GameID = dep.GameID AND surv.RaceID = sys.RaceID LEFT OUTER JOIN FCT_SystemBodyName sysbodyname ON dep.SystemBodyID = sysbodyname.SystemBodyID AND surv.GameID = dep.GameID LEFT OUTER JOIN FCT_SystemBody sysbody ON dep.SystemBodyID = sysbody.SystemBodyID AND surv.GameID = dep.GameID WHERE surv.RaceID = :race_id AND surv.GameID = :game_id AND dep.Amount > 0 AND (:mineral_name = '' OR CASE dep.MaterialID WHEN 1 THEN 'Duranium' WHEN 2 THEN 'Neutronium' WHEN 3 THEN 'Corbomite' WHEN 4 THEN 'Tritanium' WHEN 5 THEN 'Boronide' WHEN 6 THEN 'Mercassium' WHEN 7 THEN 'Vendarite' WHEN 8 THEN 'Sorium' WHEN 9 THEN 'Uridium' WHEN 10 THEN 'Corundium' WHEN 11 THEN 'Gallicite' END = :mineral_name) GROUP BY sys.Name, dep.MaterialID ORDER BY TotalAccessibleAmount DESC",
+      "tables_used": [
+        "FCT_SystemBodySurveys",
+        "FCT_MineralDeposit",
+        "FCT_RaceSysSurvey",
+        "FCT_SystemBodyName",
+        "FCT_SystemBody"
+      ],
+      "notes": "Groups by system and mineral. TotalAccessibleAmount = SUM(Amount * Accessibility). Pass mineral_name as exact name (e.g. 'Duranium') or empty string for all. Use alongside mineral_survey for body-level drill-down.",
+      "verified": true,
+      "added": "2026-05-12",
+      "updated": "2026-05-12"
+    },
+    "colony_report": {
+      "description": "Full colony report for the player race, showing population, species, capital status, unrest, fuel and MSP stockpiles, mineral stockpiles on the ground, and all planetary installations with their production queues. Ordered by population descending.",
+      "params": [],
+      "sql": "SELECT\n    DATE((SELECT StartYear || '-01-01' FROM FCT_Game WHERE GameID = :game_id), '+' || CAST(CAST((SELECT MAX(Time) FROM FCT_GameLog WHERE GameID = :game_id AND RaceID = :race_id) AS INTEGER) AS TEXT) || ' seconds') AS \"Game Date\",\n    sys.Name AS \"System Name\",\n    p.PopName AS \"Colony Name\",\n    s.SpeciesName AS \"Species\",\n    ROUND(p.Population, 2) AS \"Population (millions)\",\n    CASE CAST(p.Capital AS INTEGER) WHEN 1 THEN 'Yes' ELSE 'No' END AS \"Capital\",\n    ROUND(p.UnrestPoints, 2) AS \"Unrest Points\",\n    ROUND(p.FuelStockpile, 0) AS \"Fuel Stockpile\",\n    ROUND(p.MaintenanceStockpile, 0) AS \"MSP Stockpile\",\n    p.SystemID AS \"System ID\",\n    p.SystemBodyID AS \"Body ID\",\n    ROUND(p.Duranium, 0) AS \"Duranium\",\n    ROUND(p.Neutronium, 0) AS \"Neutronium\",\n    ROUND(p.Corbomite, 0) AS \"Corbomite\",\n    ROUND(p.Tritanium, 0) AS \"Tritanium\",\n    ROUND(p.Boronide, 0) AS \"Boronide\",\n    ROUND(p.Mercassium, 0) AS \"Mercassium\",\n    ROUND(p.Vendarite, 0) AS \"Vendarite\",\n    ROUND(p.Sorium, 0) AS \"Sorium\",\n    ROUND(p.Uridium, 0) AS \"Uridium\",\n    ROUND(p.Corundium, 0) AS \"Corundium\",\n    ROUND(p.Gallicite, 0) AS \"Gallicite\",\n    ROUND(MAX(CASE WHEN pi.PlanetaryInstallationID = 38 THEN pi.Amount END), 0) AS \"Conventional Industry\",\n    ROUND(SUM(CASE WHEN ip.ProductionID = 38 THEN ip.Amount END), 0) AS \"Conventional Industry (Queue)\",\n    ROUND(MAX(CASE WHEN pi.PlanetaryInstallationID = 5  THEN pi.Amount END), 0) AS \"Construction Factory\",\n    ROUND(SUM(CASE WHEN ip.ProductionID = 5  THEN ip.Amount END), 0) AS \"Construction Factory (Queue)\",\n    ROUND(MAX(CASE WHEN pi.PlanetaryInstallationID = 7  THEN pi.Amount END), 0) AS \"Mine\",\n    ROUND(SUM(CASE WHEN ip.ProductionID = 7  THEN ip.Amount END), 0) AS \"Mine (Queue)\",\n    ROUND(MAX(CASE WHEN pi.PlanetaryInstallationID = 12 THEN pi.Amount END), 0) AS \"Automated Mine\",\n    ROUND(SUM(CASE WHEN ip.ProductionID = 12 THEN ip.Amount END), 0) AS \"Automated Mine (Queue)\",\n    ROUND(MAX(CASE WHEN pi.PlanetaryInstallationID = 3  THEN pi.Amount END), 0) AS \"Fuel Refinery\",\n    ROUND(SUM(CASE WHEN ip.ProductionID = 3  THEN ip.Amount END), 0) AS \"Fuel Refinery (Queue)\",\n    ROUND(MAX(CASE WHEN pi.PlanetaryInstallationID = 34 THEN pi.Amount END), 0) AS \"Ordnance Factory\",\n    ROUND(SUM(CASE WHEN ip.ProductionID = 34 THEN ip.Amount END), 0) AS \"Ordnance Factory (Queue)\",\n    ROUND(MAX(CASE WHEN pi.PlanetaryInstallationID = 35 THEN pi.Amount END), 0) AS \"Fighter Factory\",\n    ROUND(SUM(CASE WHEN ip.ProductionID = 35 THEN ip.Amount END), 0) AS \"Fighter Factory (Queue)\",\n    ROUND(MAX(CASE WHEN pi.PlanetaryInstallationID = 8  THEN pi.Amount END), 0) AS \"Research Facility\",\n    ROUND(SUM(CASE WHEN ip.ProductionID = 8  THEN ip.Amount END), 0) AS \"Research Facility (Queue)\",\n    ROUND(MAX(CASE WHEN pi.PlanetaryInstallationID = 21 THEN pi.Amount END), 0) AS \"Maintenance Facility\",\n    ROUND(SUM(CASE WHEN ip.ProductionID = 21 THEN ip.Amount END), 0) AS \"Maintenance Facility (Queue)\",\n    ROUND(MAX(CASE WHEN pi.PlanetaryInstallationID = 9  THEN pi.Amount END), 0) AS \"Infrastructure\",\n    ROUND(SUM(CASE WHEN ip.ProductionID = 9  THEN ip.Amount END), 0) AS \"Infrastructure (Queue)\",\n    ROUND(MAX(CASE WHEN pi.PlanetaryInstallationID = 6  THEN pi.Amount END), 0) AS \"Terraforming Installation\",\n    ROUND(SUM(CASE WHEN ip.ProductionID = 6  THEN ip.Amount END), 0) AS \"Terraforming Installation (Queue)\",\n    ROUND(MAX(CASE WHEN pi.PlanetaryInstallationID = 11 THEN pi.Amount END), 0) AS \"Deep Space Tracking Station\",\n    ROUND(SUM(CASE WHEN ip.ProductionID = 11 THEN ip.Amount END), 0) AS \"Deep Space Tracking Station (Queue)\",\n    ROUND(MAX(CASE WHEN pi.PlanetaryInstallationID = 14 THEN pi.Amount END), 0) AS \"Military Academy\",\n    ROUND(SUM(CASE WHEN ip.ProductionID = 14 THEN ip.Amount END), 0) AS \"Military Academy (Queue)\",\n    ROUND(MAX(CASE WHEN pi.PlanetaryInstallationID = 17 THEN pi.Amount END), 0) AS \"Ground Force Construction Complex\",\n    ROUND(SUM(CASE WHEN ip.ProductionID = 17 THEN ip.Amount END), 0) AS \"Ground Force Construction Complex (Queue)\",\n    ROUND(MAX(CASE WHEN pi.PlanetaryInstallationID = 20 THEN pi.Amount END), 0) AS \"Sector Command\",\n    ROUND(SUM(CASE WHEN ip.ProductionID = 20 THEN ip.Amount END), 0) AS \"Sector Command (Queue)\",\n    ROUND(MAX(CASE WHEN pi.PlanetaryInstallationID = 24 THEN pi.Amount END), 0) AS \"Mass Driver\",\n    ROUND(SUM(CASE WHEN ip.ProductionID = 24 THEN ip.Amount END), 0) AS \"Mass Driver (Queue)\",\n    ROUND(MAX(CASE WHEN pi.PlanetaryInstallationID = 25 THEN pi.Amount END), 0) AS \"Financial Centre\",\n    ROUND(SUM(CASE WHEN ip.ProductionID = 25 THEN ip.Amount END), 0) AS \"Financial Centre (Queue)\",\n    ROUND(MAX(CASE WHEN pi.PlanetaryInstallationID = 33 THEN pi.Amount END), 0) AS \"Spaceport\",\n    ROUND(SUM(CASE WHEN ip.ProductionID = 33 THEN ip.Amount END), 0) AS \"Spaceport (Queue)\",\n    ROUND(MAX(CASE WHEN pi.PlanetaryInstallationID = 40 THEN pi.Amount END), 0) AS \"Genetic Modification Centre\",\n    ROUND(SUM(CASE WHEN ip.ProductionID = 40 THEN ip.Amount END), 0) AS \"Genetic Modification Centre (Queue)\",\n    ROUND(MAX(CASE WHEN pi.PlanetaryInstallationID = 43 THEN pi.Amount END), 0) AS \"Refuelling Station\",\n    ROUND(SUM(CASE WHEN ip.ProductionID = 43 THEN ip.Amount END), 0) AS \"Refuelling Station (Queue)\",\n    ROUND(MAX(CASE WHEN pi.PlanetaryInstallationID = 44 THEN pi.Amount END), 0) AS \"Naval Headquarters\",\n    ROUND(SUM(CASE WHEN ip.ProductionID = 44 THEN ip.Amount END), 0) AS \"Naval Headquarters (Queue)\",\n    ROUND(MAX(CASE WHEN pi.PlanetaryInstallationID = 45 THEN pi.Amount END), 0) AS \"Ordnance Transfer Station\",\n    ROUND(SUM(CASE WHEN ip.ProductionID = 45 THEN ip.Amount END), 0) AS \"Ordnance Transfer Station (Queue)\",\n    ROUND(MAX(CASE WHEN pi.PlanetaryInstallationID = 46 THEN pi.Amount END), 0) AS \"Cargo Shuttle Station\",\n    ROUND(SUM(CASE WHEN ip.ProductionID = 46 THEN ip.Amount END), 0) AS \"Cargo Shuttle Station (Queue)\",\n    ROUND(MAX(CASE WHEN pi.PlanetaryInstallationID = 4  THEN pi.Amount END), 0) AS \"Naval Shipyard Complex\",\n    ROUND(SUM(CASE WHEN ip.ProductionID = 4  THEN ip.Amount END), 0) AS \"Naval Shipyard Complex (Queue)\",\n    ROUND(MAX(CASE WHEN pi.PlanetaryInstallationID = 32 THEN pi.Amount END), 0) AS \"Commercial Shipyard Complex\",\n    ROUND(SUM(CASE WHEN ip.ProductionID = 32 THEN ip.Amount END), 0) AS \"Commercial Shipyard Complex (Queue)\",\n    ROUND(MAX(CASE WHEN pi.PlanetaryInstallationID = 51 THEN pi.Amount END), 0) AS \"Repair Yard\",\n    ROUND(SUM(CASE WHEN ip.ProductionID = 51 THEN ip.Amount END), 0) AS \"Repair Yard (Queue)\",\n    ROUND(MAX(CASE WHEN pi.PlanetaryInstallationID = 39 THEN pi.Amount END), 0) AS \"Civilian Mining Complex\",\n    ROUND(SUM(CASE WHEN ip.ProductionID = 39 THEN ip.Amount END), 0) AS \"Civilian Mining Complex (Queue)\",\n    ROUND(MAX(CASE WHEN pi.PlanetaryInstallationID = 52 THEN pi.Amount END), 0) AS \"Ex-Civilian Mining Complex\",\n    ROUND(SUM(CASE WHEN ip.ProductionID = 52 THEN ip.Amount END), 0) AS \"Ex-Civilian Mining Complex (Queue)\",\n    ROUND(MAX(CASE WHEN pi.PlanetaryInstallationID = 47 THEN pi.Amount END), 0) AS \"Forced Labour Construction Camp\",\n    ROUND(SUM(CASE WHEN ip.ProductionID = 47 THEN ip.Amount END), 0) AS \"Forced Labour Construction Camp (Queue)\",\n    ROUND(MAX(CASE WHEN pi.PlanetaryInstallationID = 48 THEN pi.Amount END), 0) AS \"Forced Labour Mining Camp\",\n    ROUND(SUM(CASE WHEN ip.ProductionID = 48 THEN ip.Amount END), 0) AS \"Forced Labour Mining Camp (Queue)\",\n    ROUND(SUM(CASE WHEN ip.ProductionID = 18 THEN ip.Amount END), 0) AS \"Convert Mine to Automated (Queue)\",\n    ROUND(SUM(CASE WHEN ip.ProductionID = 27 THEN ip.Amount END), 0) AS \"Convert CI to Construction Factory (Queue)\",\n    ROUND(SUM(CASE WHEN ip.ProductionID = 28 THEN ip.Amount END), 0) AS \"Convert CI to Mine (Queue)\",\n    ROUND(SUM(CASE WHEN ip.ProductionID = 30 THEN ip.Amount END), 0) AS \"Convert CI to Fuel Refinery (Queue)\",\n    ROUND(SUM(CASE WHEN ip.ProductionID = 36 THEN ip.Amount END), 0) AS \"Convert CI to Ordnance Factory (Queue)\",\n    ROUND(SUM(CASE WHEN ip.ProductionID = 37 THEN ip.Amount END), 0) AS \"Convert CI to Fighter Factory (Queue)\",\n    ROUND(SUM(CASE WHEN ip.ProductionID = 50 THEN ip.Amount END), 0) AS \"Convert CI to Financial Centre (Queue)\"\nFROM FCT_Population p\n    INNER JOIN FCT_Species s ON p.SpeciesID = s.SpeciesID\n    LEFT JOIN FCT_RaceSysSurvey sys ON p.SystemID = sys.SystemID AND p.GameID = sys.GameID AND sys.RaceID = p.RaceID\n    LEFT JOIN FCT_PopulationInstallations pi ON p.PopulationID = pi.PopID AND p.GameID = pi.GameID\n    LEFT JOIN FCT_IndustrialProjects ip ON p.PopulationID = ip.PopulationID AND p.GameID = ip.GameID AND p.RaceID = ip.RaceID AND ip.ProductionType = 0\nWHERE p.RaceID = :race_id AND p.GameID = :game_id\n    AND (s.SpeciesID = (SELECT DefaultRaceID FROM FCT_Game WHERE GameID = :game_id) OR s.DerivedSpeciesID = (SELECT DefaultRaceID FROM FCT_Game WHERE GameID = :game_id))\nGROUP BY p.PopulationID, sys.Name, p.PopName, s.SpeciesName, p.Population, p.Capital, p.UnrestPoints, p.FuelStockpile, p.MaintenanceStockpile, p.SystemID, p.SystemBodyID, p.Duranium, p.Neutronium, p.Corbomite, p.Tritanium, p.Boronide, p.Mercassium, p.Vendarite, p.Sorium, p.Uridium, p.Corundium, p.Gallicite\nORDER BY p.Population DESC",
+      "tables_used": [
+        "FCT_Population",
+        "FCT_Species",
+        "FCT_RaceSysSurvey",
+        "FCT_PopulationInstallations",
+        "FCT_IndustrialProjects",
+        "FCT_GameLog",
+        "FCT_Game"
+      ],
+      "notes": "Filters to the player's primary species and derived species (SpeciesID 753 hardcoded \u2014 needs to be made dynamic). Uses pivoted CASE/MAX for installations and SUM for queue amounts. ProductionType = 0 filters to installation projects only.",
+      "verified": true,
+      "added": "2026-05-12"
+    },
+    "commander_assignment": {
+      "description": "Look up commander details by name fragment \u2014 returns officer type, rank (Naval/Ground only), current assignment, homeworld, and full career history ordered by game time.",
+      "params": [
+        "name_fragment"
+      ],
+      "sql": "SELECT\n  c.CommanderID,\n  c.Name,\n  CASE c.CommanderType\n    WHEN 0 THEN 'Naval'\n    WHEN 1 THEN 'Ground Forces'\n    WHEN 2 THEN 'Scientist'\n    WHEN 3 THEN 'Administrator'\n    ELSE 'Unknown (' || c.CommanderType || ')'\n  END AS OfficerType,\n  CASE WHEN c.CommanderType IN (0, 1) THEN r.RankName ELSE NULL END AS RankName,\n  CASE WHEN c.CommanderType IN (0, 1) THEN r.RankAbbrev ELSE NULL END AS RankAbbrev,\n  c.CommandType,\n  c.CommandID,\n  COALESCE(p.PopName, 'Unknown') AS Homeworld,\n  h.HistoryText,\n  h.GameTime AS HistoryGameTime\nFROM FCT_Commander c\nLEFT JOIN FCT_Ranks r\n  ON r.RankID = c.RankID\n  AND r.GameID = c.GameID\nLEFT JOIN FCT_Population p\n  ON p.SystemBodyID = c.HomeworldID\n  AND p.GameID = c.GameID\nLEFT JOIN FCT_CommanderHistory h\n  ON h.CommanderID = c.CommanderID\n  AND h.GameID = c.GameID\nWHERE c.GameID = :game_id\n  AND c.RaceID = :race_id\n  AND c.Name LIKE '%' || :name_fragment || '%'\nORDER BY c.Name, h.GameTime ASC",
+      "tables_used": [
+        "FCT_Commander",
+        "FCT_Ranks",
+        "FCT_Population",
+        "FCT_CommanderHistory"
+      ],
+      "notes": "CommanderType: 0=Naval, 1=Ground Forces, 2=Scientist, 3=Administrator. Rank only applies to Naval and Ground officers. History is aggregated from FCT_CommanderHistory ordered chronologically.",
+      "verified": true,
+      "added": "2026-05-13"
+    },
+    "DRAFT_ship_design_report": {
+      "description": "Full ship design report for all Court vessel classes \u2014 identity, propulsion, armour, sensors, maintenance, cargo, special roles, EW, and full component manifest. Excludes shipping line vessels. Returns one row per class ordered by type (military first), obsolescence, size descending, then name.",
+      "params": [],
+      "sql": "SELECT\n    sc.ShipClassID                                                              AS \"Class ID\",\n    sc.ClassName                                                                AS \"Class Name\",\n    CASE sc.Commercial       WHEN 1 THEN 'Commercial' ELSE 'Military' END      AS \"Type\",\n    CASE sc.FighterClass     WHEN 1 THEN 'Yes'        ELSE 'No'       END      AS \"Fighter\",\n    CASE sc.Obsolete         WHEN 1 THEN 'Yes'        ELSE 'No'       END      AS \"Obsolete\",\n    ROUND(sc.Size, 0)                                                           AS \"Tonnage (HS)\",\n    ROUND(sc.Cost, 1)                                                           AS \"Cost\",\n    sc.TotalNumber                                                              AS \"Total Built\",\n    sc.MaxSpeed                                                                 AS \"Max Speed\",\n    sc.EnginePower                                                              AS \"Engine Power\",\n    ROUND(sc.FuelEfficiency, 4)                                                 AS \"Fuel Efficiency\",\n    sc.FuelCapacity                                                             AS \"Fuel Capacity\",\n    sc.MinimumFuel                                                              AS \"Minimum Fuel\",\n    sc.JumpRating                                                               AS \"Jump Rating\",\n    sc.JumpDistance                                                             AS \"Jump Distance\",\n    sc.Crew                                                                     AS \"Crew\",\n    ROUND(sc.PlannedDeployment, 1)                                              AS \"Planned Deployment (yrs)\",\n    sc.ControlRating                                                            AS \"Control Rating\",\n    sc.ArmourThickness                                                          AS \"Armour Thickness\",\n    sc.ArmourWidth                                                              AS \"Armour Width\",\n    ROUND(sc.ProtectionValue, 2)                                                AS \"Protection Value\",\n    sc.ShieldStrength                                                           AS \"Shield Strength\",\n    sc.DCRating                                                                 AS \"DC Rating\",\n    sc.ActiveSensorStrength                                                     AS \"Active Sensor Strength\",\n    sc.PassiveSensorStrength                                                    AS \"Passive Sensor Strength\",\n    sc.EMSensorStrength                                                         AS \"EM Sensor Strength\",\n    ROUND(sc.ClassThermal, 1)                                                   AS \"Thermal Signature\",\n    ROUND(sc.ClassCrossSection, 1)                                              AS \"Cross Section (EM)\",\n    ROUND(sc.SensorReduction, 2)                                                AS \"Sensor Reduction\",\n    sc.MaintSupplies                                                            AS \"Maint Supplies Capacity\",\n    sc.MinimumSupplies                                                          AS \"Minimum Supplies\",\n    ROUND(sc.BaseFailureChance, 4)                                              AS \"Base Failure Chance\",\n    sc.CargoCapacity                                                            AS \"Cargo Capacity\",\n    sc.ColonistCapacity                                                         AS \"Colonist Capacity\",\n    sc.TroopCapacity                                                            AS \"Troop Capacity\",\n    sc.WorkerCapacity                                                           AS \"Worker Capacity\",\n    sc.MagazineCapacity                                                         AS \"Magazine Capacity\",\n    ROUND(sc.ParasiteCapacity, 0)                                               AS \"Parasite Capacity\",\n    sc.GeoSurvey                                                                AS \"Geo Survey\",\n    sc.GravSurvey                                                               AS \"Grav Survey\",\n    sc.MiningModules                                                            AS \"Mining Modules\",\n    sc.Harvesters                                                               AS \"Harvesters\",\n    sc.Terraformers                                                             AS \"Terraformers\",\n    sc.Collier                                                                  AS \"Collier\",\n    sc.FuelTanker                                                               AS \"Fuel Tanker\",\n    sc.SupplyShip                                                               AS \"Supply Ship\",\n    sc.RepairYardCapacity                                                       AS \"Repair Yard Capacity\",\n    sc.CargoShuttleStrength                                                     AS \"Cargo Shuttle Strength\",\n    sc.ActiveJammerStrength                                                     AS \"Active Jammer\",\n    sc.FireControlJammerStrength                                                AS \"FC Jammer\",\n    sc.MissileJammerStrength                                                    AS \"Missile Jammer\",\n    sc.ELINTRating                                                              AS \"ELINT Rating\",\n    sc.DiplomacyRating                                                          AS \"Diplomacy Rating\",\n    COUNT(DISTINCT cc.ComponentID)                                              AS \"Distinct Components\",\n    ROUND(SUM(cc.NumComponent * comp.Size), 1)                                  AS \"Component HS Total\",\n    MAX(CASE WHEN comp.BeamWeapon = 1      THEN 1 ELSE 0 END)                  AS \"Has Beam Weapons\",\n    MAX(CASE WHEN comp.Weapon = 1\n         AND comp.BeamWeapon = 0           THEN 1 ELSE 0 END)                  AS \"Has Other Weapons\",\n    MAX(CASE WHEN comp.JumpRating > 0      THEN 1 ELSE 0 END)                  AS \"Has Jump Drive\",\n    MAX(CASE WHEN comp.StealthRating > 0   THEN 1 ELSE 0 END)                  AS \"Has Stealth\",\n    MAX(CASE WHEN comp.CloakRating > 0     THEN 1 ELSE 0 END)                  AS \"Has Cloak\",\n    MAX(CASE WHEN comp.ECCM > 0            THEN 1 ELSE 0 END)                  AS \"Has ECCM\",\n    GROUP_CONCAT(\n        CASE WHEN cc.NumComponent > 0\n            THEN CAST(CAST(cc.NumComponent AS INTEGER) AS TEXT)\n                 || 'x ' || comp.Name\n        END, ' | '\n    )                                                                           AS \"Components\"\nFROM FCT_ShipClass sc\nLEFT JOIN FCT_ClassComponent cc\n    ON sc.ShipClassID = cc.ClassID AND cc.GameID = :game_id\nLEFT JOIN FCT_ShipDesignComponents comp\n    ON cc.ComponentID = comp.SDComponentID AND comp.GameID = :game_id\nWHERE sc.GameID = :game_id\n    AND sc.RaceID = :race_id\n    AND sc.ClassShippingLineID = 0\nGROUP BY\n    sc.ShipClassID, sc.ClassName, sc.Commercial, sc.FighterClass, sc.Obsolete,\n    sc.Size, sc.Cost, sc.TotalNumber, sc.MaxSpeed, sc.EnginePower, sc.FuelEfficiency,\n    sc.FuelCapacity, sc.MinimumFuel, sc.JumpRating, sc.JumpDistance, sc.Crew,\n    sc.PlannedDeployment, sc.ControlRating, sc.ArmourThickness, sc.ArmourWidth,\n    sc.ProtectionValue, sc.ShieldStrength, sc.DCRating, sc.ActiveSensorStrength,\n    sc.PassiveSensorStrength, sc.EMSensorStrength, sc.ClassThermal, sc.ClassCrossSection,\n    sc.SensorReduction, sc.MaintSupplies, sc.MinimumSupplies, sc.BaseFailureChance,\n    sc.CargoCapacity, sc.ColonistCapacity, sc.TroopCapacity, sc.WorkerCapacity,\n    sc.MagazineCapacity, sc.ParasiteCapacity, sc.GeoSurvey, sc.GravSurvey,\n    sc.MiningModules, sc.Harvesters, sc.Terraformers, sc.Collier, sc.FuelTanker,\n    sc.SupplyShip, sc.RepairYardCapacity, sc.CargoShuttleStrength, sc.ActiveJammerStrength,\n    sc.FireControlJammerStrength, sc.MissileJammerStrength, sc.ELINTRating, sc.DiplomacyRating\nORDER BY sc.Commercial, sc.Obsolete, sc.Size DESC, sc.ClassName",
+      "tables_used": [
+        "FCT_ShipClass",
+        "FCT_ClassComponent",
+        "FCT_ShipDesignComponents"
+      ],
+      "notes": "Size is in Hull Spaces (HS). Cost in build points. FuelEfficiency is litres per HS per hour. BaseFailureChance is per year. Component HS Total is the sum of (count \u00d7 size) for all fitted components \u2014 useful for cross-checking design tonnage. The Johan class (65367) appears to use generic/unmodded component names suggesting it may be a foreign or captured design.",
+      "verified": false,
+      "added": "2026-05-13"
+    },
+    "DRAFT_class_ordnance_templates": {
+      "description": "Returns the ordnance load-out template for all Court ship classes \u2014 which missiles are assigned to each class and in what quantity, joined with full missile stats from FCT_MissileType. Filter by class name using the optional class_name param (supports partial match). Omit to get all classes.",
+      "params": [
+        "class_name"
+      ],
+      "sql": "SELECT\n    sc.ClassName                                AS \"Class Name\",\n    mt.Name                                     AS \"Missile Name\",\n    ms.SeriesName                               AS \"Series\",\n    ot.Amount                                   AS \"Amount\",\n    ROUND(mt.Size, 2)                           AS \"Size (MSP)\",\n    ROUND(mt.Cost, 2)                           AS \"Cost\",\n    mt.MissilesAvailable                        AS \"Available\",\n    ROUND(mt.Speed, 0)                          AS \"Speed (km/s)\",\n    ROUND(mt.MaxRange / 1000000.0, 2)          AS \"Max Range (Mkm)\",\n    ROUND(mt.Endurance, 1)                      AS \"Endurance (hrs)\",\n    ROUND(mt.WarheadStrength, 1)                AS \"Warhead\",\n    ROUND(mt.LaserWarhead, 1)                   AS \"Laser WH\",\n    mt.MR                                       AS \"MR\",\n    mt.ECM                                      AS \"ECM\",\n    mt.ECCM                                     AS \"ECCM\",\n    mt.Retargeting                              AS \"Retargeting\",\n    ROUND(mt.SensorStrength, 2)                 AS \"Sensor Str\",\n    mt.SensorResolution                         AS \"Sensor Res\",\n    mt.NumSS                                    AS \"Stages\",\n    mt.SecondStageID                            AS \"2nd Stage ID\",\n    mt.NumDecoys                                AS \"Decoys\",\n    mt.ShipDecoy                                AS \"Ship Decoy\",\n    mt.MultipleWarheads                         AS \"Multi-WH\",\n    ROUND(mt.GroundDamage, 2)                   AS \"Ground Dmg\",\n    ROUND(mt.GroundAP, 2)                       AS \"Ground AP\",\n    mt.MissileID\nFROM FCT_ClassOrdnanceTemplate ot\nJOIN FCT_ShipClass sc\n    ON ot.ShipClassID = sc.ShipClassID AND sc.GameID = :game_id\nJOIN FCT_MissileType mt\n    ON ot.MissileID = mt.MissileID AND mt.GameID = :game_id\nLEFT JOIN MissileSeries ms\n    ON mt.MissileSeriesID = ms.SeriesID AND ms.RaceID = :race_id\nWHERE ot.GameID = :game_id\n    AND sc.RaceID = :race_id\n    AND (:class_name = '' OR sc.ClassName LIKE '%' || :class_name || '%')\nORDER BY sc.ClassName, ot.Amount DESC",
+      "tables_used": [
+        "FCT_ClassOrdnanceTemplate",
+        "FCT_ShipClass",
+        "FCT_MissileType",
+        "MissileSeries"
+      ],
+      "notes": "class_name is a partial match filter \u2014 pass empty string to get all classes. Amount is the template quantity (how many of that missile the class is configured to carry). MissilesAvailable is current stock in the game.",
+      "verified": false,
+      "added": "2026-05-13"
+    },
+    "DRAFT_missile_catalogue": {
+      "description": "Full missile/ordnance catalogue for the Court race \u2014 all missile types with complete stats: speed, range, warhead, endurance, ECM/ECCM, sensors, decoys, staging, ground attack, cost, and current stock. Optional filter by missile name. Covers ASMs, AMMs, torpedoes, ship decoys, and sensor buoys.",
+      "params": [
+        "missile_name"
+      ],
+      "sql": "SELECT\n    mt.MissileID,\n    mt.Name                                     AS \"Missile Name\",\n    ms.SeriesName                               AS \"Series\",\n    ROUND(mt.Size, 2)                           AS \"Size (MSP)\",\n    ROUND(mt.Cost, 2)                           AS \"Cost\",\n    mt.MissilesRequired                         AS \"Required\",\n    mt.MissilesAvailable                        AS \"Available\",\n    ROUND(mt.Speed, 0)                          AS \"Speed (km/s)\",\n    ROUND(mt.MaxRange / 1000000.0, 2)          AS \"Max Range (Mkm)\",\n    ROUND(mt.Endurance, 1)                      AS \"Endurance (hrs)\",\n    ROUND(mt.WarheadStrength, 1)                AS \"Warhead\",\n    ROUND(mt.LaserWarhead, 1)                   AS \"Laser WH\",\n    mt.MR                                       AS \"MR\",\n    mt.ECM                                      AS \"ECM\",\n    mt.ECCM                                     AS \"ECCM\",\n    mt.Retargeting                              AS \"Retargeting\",\n    ROUND(mt.SensorStrength, 2)                 AS \"Sensor Str\",\n    mt.SensorResolution                         AS \"Sensor Res\",\n    ROUND(mt.ThermalStrength, 2)                AS \"Thermal Str\",\n    ROUND(mt.EMStrength, 2)                     AS \"EM Str\",\n    mt.NumEngines                               AS \"Engines\",\n    mt.NumSS                                    AS \"Stages\",\n    mt.SecondStageID                            AS \"2nd Stage ID\",\n    mt.NumDecoys                                AS \"Decoys\",\n    mt.ShipDecoy                                AS \"Ship Decoy\",\n    mt.MultipleWarheads                         AS \"Multi-WH\",\n    ROUND(mt.RadDamage, 2)                      AS \"Rad Damage\",\n    ROUND(mt.GroundDamage, 2)                   AS \"Ground Dmg\",\n    ROUND(mt.GroundAP, 2)                       AS \"Ground AP\"\nFROM FCT_MissileType mt\nLEFT JOIN MissileSeries ms\n    ON mt.MissileSeriesID = ms.SeriesID AND ms.RaceID = :race_id\nWHERE mt.GameID = :game_id\n    AND (:missile_name = '' OR mt.Name LIKE '%' || :missile_name || '%')\nORDER BY ms.SeriesName NULLS LAST, mt.Name",
+      "tables_used": [
+        "FCT_MissileType",
+        "MissileSeries"
+      ],
+      "notes": "missile_name is a partial match filter \u2014 pass empty string to get the full catalogue. ShipDecoy=1 means it is a decoy rather than an attack weapon. Stages > 0 means multi-stage; SecondStageID references another MissileID in this same table. MaxRange is stored in km \u2014 displayed here in Mkm. MissilesAvailable is current stock count.",
+      "verified": false,
+      "added": "2026-05-13"
+    }
+  }
+}
