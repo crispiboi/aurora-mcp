@@ -245,7 +245,7 @@
       "added": "2026-05-13"
     },
     "ship_design_report": {
-      "description": "Full ship design report for all Court vessel classes \u2014 identity, propulsion, armour, sensors, maintenance, cargo, special roles, EW, and full component manifest. Includes capture provenance: IsCaptured flag, Source Class, and Source Race for reverse-engineered or captured designs. Excludes shipping line vessels. Returns one row per class ordered by type (military first), obsolescence, size descending, then name.",
+      "description": "Full ship design report for all empire vessel classes \u2014 identity, propulsion, armour, sensors, maintenance, cargo, special roles, EW, and full component manifest. Includes capture provenance: IsCaptured flag, Source Class, and Source Race for reverse-engineered or captured designs. Excludes shipping line vessels. Returns one row per class ordered by type (military first), obsolescence, size descending, then name.",
       "params": [],
       "sql": "SELECT\n    sc.ShipClassID AS \"Class ID\",\n    sc.ClassName AS \"Class Name\",\n    CASE WHEN sc.Commercial = 0 THEN 'Military' ELSE 'Commercial' END AS \"Type\",\n    CASE WHEN sc.FighterClass = 1 THEN 'Yes' ELSE 'No' END AS \"Fighter\",\n    CASE WHEN sc.Obsolete = 1 THEN 'Yes' ELSE 'No' END AS \"Obsolete\",\n    CASE WHEN sc.OtherRaceClassID != 0 THEN 1 ELSE 0 END AS \"IsCaptured\",\n    sc2.ClassName AS \"Source Class\",\n    r2.RaceName AS \"Source Race\",\n    ROUND(sc.Size, 2) AS \"Tonnage (HS)\",\n    sc.Cost AS \"Cost\",\n    sc.TotalNumber AS \"Total Built\",\n    sc.MaxSpeed AS \"Max Speed\",\n    sc.EnginePower AS \"Engine Power\",\n    sc.FuelEfficiency AS \"Fuel Efficiency\",\n    sc.FuelCapacity AS \"Fuel Capacity\",\n    sc.MinimumFuel AS \"Minimum Fuel\",\n    sc.JumpRating AS \"Jump Rating\",\n    sc.JumpDistance AS \"Jump Distance\",\n    sc.Crew AS \"Crew\",\n    sc.PlannedDeployment AS \"Planned Deployment (yrs)\",\n    sc.ControlRating AS \"Control Rating\",\n    sc.ArmourThickness AS \"Armour Thickness\",\n    sc.ArmourWidth AS \"Armour Width\",\n    sc.ProtectionValue AS \"Protection Value\",\n    sc.ShieldStrength AS \"Shield Strength\",\n    sc.DCRating AS \"DC Rating\",\n    sc.ActiveSensorStrength AS \"Active Sensor Strength\",\n    sc.PassiveSensorStrength AS \"Passive Sensor Strength\",\n    sc.EMSensorStrength AS \"EM Sensor Strength\",\n    sc.ClassThermal AS \"Thermal Signature\",\n    sc.ClassCrossSection AS \"Cross Section (EM)\",\n    sc.SensorReduction AS \"Sensor Reduction\",\n    sc.MaintSupplies AS \"Maint Supplies Capacity\",\n    sc.MinimumSupplies AS \"Minimum Supplies\",\n    sc.BaseFailureChance AS \"Base Failure Chance\",\n    sc.CargoCapacity AS \"Cargo Capacity\",\n    sc.ColonistCapacity AS \"Colonist Capacity\",\n    sc.TroopCapacity AS \"Troop Capacity\",\n    sc.WorkerCapacity AS \"Worker Capacity\",\n    sc.MagazineCapacity AS \"Magazine Capacity\",\n    sc.ParasiteCapacity AS \"Parasite Capacity\",\n    sc.GeoSurvey AS \"Geo Survey\",\n    sc.GravSurvey AS \"Grav Survey\",\n    sc.MiningModules AS \"Mining Modules\",\n    sc.Harvesters AS \"Harvesters\",\n    sc.Terraformers AS \"Terraformers\",\n    sc.Collier AS \"Collier\",\n    sc.FuelTanker AS \"Fuel Tanker\",\n    sc.SupplyShip AS \"Supply Ship\",\n    sc.RepairYardCapacity AS \"Repair Yard Capacity\",\n    sc.CargoShuttleStrength AS \"Cargo Shuttle Strength\",\n    sc.ActiveJammerStrength AS \"Active Jammer\",\n    sc.FireControlJammerStrength AS \"FC Jammer\",\n    sc.MissileJammerStrength AS \"Missile Jammer\",\n    sc.ELINTRating AS \"ELINT Rating\",\n    sc.DiplomacyRating AS \"Diplomacy Rating\",\n    COUNT(DISTINCT cc.ComponentID) AS \"Distinct Components\",\n    ROUND(SUM(cc.NumComponent * comp.Size), 2) AS \"Component HS Total\",\n    MAX(CASE WHEN comp.BeamWeapon = 1 THEN 1 ELSE 0 END) AS \"Has Beam Weapons\",\n    MAX(CASE WHEN comp.Weapon = 1 AND comp.BeamWeapon = 0 THEN 1 ELSE 0 END) AS \"Has Other Weapons\",\n    MAX(CASE WHEN comp.JumpRating > 0 THEN 1 ELSE 0 END) AS \"Has Jump Drive\",\n    MAX(CASE WHEN comp.StealthRating > 0 THEN 1 ELSE 0 END) AS \"Has Stealth\",\n    MAX(CASE WHEN comp.CloakRating > 0 THEN 1 ELSE 0 END) AS \"Has Cloak\",\n    MAX(CASE WHEN comp.ECCM > 0 THEN 1 ELSE 0 END) AS \"Has ECCM\",\n    GROUP_CONCAT(CAST(CAST(cc.NumComponent AS INTEGER) AS TEXT) || 'x ' || comp.Name, ' | ') AS \"Components\"\nFROM FCT_ShipClass sc\nLEFT JOIN FCT_ClassComponent cc ON sc.ShipClassID = cc.ClassID\n    AND cc.GameID = :game_id\n    AND cc.NumComponent > 0\nLEFT JOIN FCT_ShipDesignComponents comp ON cc.ComponentID = comp.SDComponentID\nLEFT JOIN FCT_ShipClass sc2 ON sc.OtherRaceClassID = sc2.ShipClassID\nLEFT JOIN FCT_Race r2 ON sc2.RaceID = r2.RaceID\nWHERE sc.GameID = :game_id\n  AND sc.RaceID = :race_id\n  AND sc.ClassShippingLineID = 0\nGROUP BY sc.ShipClassID\nORDER BY sc.Commercial ASC, sc.Obsolete ASC, sc.Size DESC, sc.ClassName ASC",
       "tables_used": [
@@ -260,7 +260,7 @@
       "updated": "2026-05-14"
     },
     "colony_ordnance_stockpiles": {
-      "description": "Shows all missile/ordnance stockpiles held at Court colonies, grouped by colony and missile type. Returns colony name, body name, system name, missile name, stock count, size in MSP, total MSP held, and key combat stats. Optional filter by missile name (partial match). Only shows colonies with stock > 0.",
+      "description": "Shows all missile/ordnance stockpiles held at empire colonies, grouped by colony and missile type. Returns colony name, body name, system name, missile name, stock count, size in MSP, total MSP held, and key combat stats. Optional filter by missile name (partial match). Only shows colonies with stock > 0.",
       "params": [
         "missile_name"
       ],
@@ -278,7 +278,7 @@
       "updated": "2026-05-14"
     },
     "missile_catalogue": {
-      "description": "Full missile/ordnance catalogue for the Court race \u2014 all missile types with complete stats: speed, range, warhead, endurance, ECM/ECCM, sensors, decoys, staging, ground attack, cost, and total stock held across all colonies. Optional filter by missile name (partial match). Covers ASMs, AMMs, torpedoes, ship decoys, and sensor buoys.",
+      "description": "Full missile/ordnance catalogue for the empire \u2014 all missile types with complete stats: speed, range, warhead, endurance, ECM/ECCM, sensors, decoys, staging, ground attack, cost, and total stock held across all colonies. Optional filter by missile name (partial match). Covers ASMs, AMMs, torpedoes, ship decoys, and sensor buoys.",
       "params": [
         "missile_name"
       ],
@@ -290,13 +290,13 @@
         "FCT_ClassOrdnanceTemplate",
         "FCT_ShipClass"
       ],
-      "notes": "Total stock summed from FCT_PopulationWeapon across all Court colonies \u2014 MissilesAvailable on FCT_MissileType is always 0 and unused. Speed stored as km/s. MaxRange stored as km \u2014 divide by 1,000,000 for Mkm. Only includes missiles assigned to a Court class OR held in a Court stockpile. Filters out DEFECT designs. missile_name is optional \u2014 pass empty string to get all.",
+      "notes": "Total stock summed from FCT_PopulationWeapon across all empire colonies \u2014 MissilesAvailable on FCT_MissileType is always 0 and unused. Speed stored as km/s. MaxRange stored as km \u2014 divide by 1,000,000 for Mkm. Only includes missiles assigned to an empire class OR held in an empire stockpile. Filters out DEFECT designs. missile_name is optional \u2014 pass empty string to get all.",
       "verified": true,
       "added": "2026-05-13",
       "updated": "2026-05-14"
     },
     "class_ordnance_templates": {
-      "description": "Returns the ordnance load-out template for all Court ship classes \u2014 which missiles are assigned to each class and in what quantity, joined with full missile stats and total colony stock. Filter by class name using the optional class_name param (supports partial match). Pass empty string to get all classes.",
+      "description": "Returns the ordnance load-out template for all empire ship classes \u2014 which missiles are assigned to each class and in what quantity, joined with full missile stats and total colony stock. Filter by class name using the optional class_name param (supports partial match). Pass empty string to get all classes.",
       "params": [
         "class_name"
       ],
@@ -308,7 +308,7 @@
         "FCT_PopulationWeapon",
         "FCT_Population"
       ],
-      "notes": "FCT_ClassOrdnanceTemplate joins to FCT_MissileType for stats. Speed is stored as km/s. MaxRange is stored in km \u2014 divided by 1,000,000 for Mkm. Total stock summed from FCT_PopulationWeapon across Court colonies (same source as colony_ordnance_stockpiles). class_name is optional \u2014 pass empty string to get all.",
+      "notes": "FCT_ClassOrdnanceTemplate joins to FCT_MissileType for stats. Speed is stored as km/s. MaxRange is stored in km \u2014 divided by 1,000,000 for Mkm. Total stock summed from FCT_PopulationWeapon across empire colonies (same source as colony_ordnance_stockpiles). class_name is optional \u2014 pass empty string to get all.",
       "verified": true,
       "added": "2026-05-13",
       "updated": "2026-05-14"
@@ -369,7 +369,7 @@
       "updated": "2026-05-14"
     },
     "ship_class_classifications": {
-      "description": "Returns ClassName, Classification (e.g. Battleship, Heavy Cruiser, Destroyer), and HullAbbr (e.g. BB, CA, DD) for all Court ship classes. Use as a quick lookup when you need hull type context alongside ship_design_report, or to filter/group classes by classification. Joins FCT_ShipClass to FCT_HullDescription on HullDescriptionID.",
+      "description": "Returns ClassName, Classification (e.g. Battleship, Heavy Cruiser, Destroyer), and HullAbbr (e.g. BB, CA, DD) for all empire ship classes. Use as a quick lookup when you need hull type context alongside ship_design_report, or to filter/group classes by classification. Joins FCT_ShipClass to FCT_HullDescription on HullDescriptionID.",
       "params": [],
       "sql": "SELECT\n  sc.ShipClassID,\n  sc.ClassName,\n  hd.Description AS Classification,\n  hd.HullAbbr,\n  CASE WHEN sc.Commercial = 1 THEN 'Commercial' ELSE 'Military' END AS Type,\n  CASE WHEN sc.Obsolete = 1 THEN 'Yes' ELSE 'No' END AS Obsolete,\n  sc.Size AS Tonnage\nFROM FCT_ShipClass sc\nJOIN FCT_HullDescription hd ON sc.HullDescriptionID = hd.HullDescriptionID\nWHERE sc.GameID = :game_id\n  AND sc.RaceID = :race_id\n  AND sc.ClassShippingLineID = 0\nORDER BY sc.Commercial, sc.Obsolete, sc.Size DESC, sc.ClassName",
       "tables_used": [
@@ -400,6 +400,17 @@
         "FCT_CommanderMeasurement"
       ],
       "notes": "Age is derived: (CareerStart - species GraduationAge * 31557600) gives approximate birth time; age = (current_game_time - birth_time) / 31557600. HealthRisk maps as: 1=Good, 2=Fair, 3=Poor, 4=Critical. BonusValue is a multiplier (1.35 = 35% bonus). GameTime in history is seconds since game epoch \u2014 convert to in-game date via the same 31557600 seconds/year formula from game start (Jan 1 2050 = epoch 0 for most campaigns, but verify via FCT_Game). Career history HistoryText contains both promotions and ship assignments verbatim as Aurora records them.",
+      "verified": true,
+      "added": "2026-05-14"
+    },
+    "SPOILER_GUARD_other_races": {
+      "description": "\u26a0\ufe0f SPOILER GUARD: Lists all races in the game other than the player's own race. STOP \u2014 before executing any query that targets another race's data, explicitly confirm with the player that they truly want to view this information, as it may reveal spoilers about opponents.",
+      "params": [],
+      "sql": "SELECT RaceID, RaceName, Eliminated FROM FCT_Race WHERE GameID = :game_id AND RaceID != :race_id",
+      "tables_used": [
+        "FCT_Race"
+      ],
+      "notes": "This entry serves as a spoiler guardrail. Any session that loads the query registry will see this entry and know to pause and verify with the player before running queries against non-player race data.",
       "verified": true,
       "added": "2026-05-14"
     }

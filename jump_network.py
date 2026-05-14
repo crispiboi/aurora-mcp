@@ -138,7 +138,7 @@ def dijkstra(
     Dijkstra over the jump network from source_id.
 
     destination_id: early-exit once the destination is settled (point-to-point).
-    max_hops: hard depth cap; default 15 covers all practical Court operations,
+    max_hops: hard depth cap; default 15 covers all practical empire operations,
               pass 50 for full exploration or long-range routing.
 
     Returns {system_id: ReachableSystem} for all settled nodes.
