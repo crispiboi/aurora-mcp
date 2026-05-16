@@ -10,144 +10,221 @@
   "schema": {
     "FCT_Game": {
       "pk": "GameID",
-      "fk": {},
+      "fk": [],
       "safe_columns": [
         "GameID",
-        "GameName"
+        "GameName",
+        "GameTime"
       ],
-      "notes": "Sample game always present; exclude by GameName != 'Sample' when resolving active campaign."
+      "notes": "Filter out the sample game with WHERE GameName != 'Sample'. GameTime is in seconds from epoch."
     },
     "FCT_Race": {
       "pk": "RaceID",
-      "fk": {
-        "GameID": "FCT_Game.GameID"
-      },
+      "fk": [
+        "GameID\u2192FCT_Game.GameID"
+      ],
       "safe_columns": [
         "RaceID",
         "GameID",
         "RaceName",
         "NPR"
       ],
-      "notes": "NPR=0 is the player race. Confirm MIN vs MAX RaceID for player on first boot."
+      "notes": "NPR=0 is the player race. Use :race_id binding \u2014 never hardcode RaceID."
     },
     "FCT_System": {
       "pk": "SystemID",
-      "fk": {},
+      "fk": [
+        "GameID\u2192FCT_Game.GameID"
+      ],
       "safe_columns": [
         "SystemID",
-        "SystemName"
+        "GameID",
+        "SystemNumber"
       ],
-      "notes": "FCT_System has no coordinate columns. Inter-system distances are derived from FCT_JumpPoint.Distance (system center to jump point) with Xcor/Ycor fallback."
+      "notes": "No SystemName column. System names come from FCT_Star.Name joined on SystemID. FCT_System has no coordinate columns \u2014 coordinates are on FCT_Star (Xcor, Ycor) and FCT_Fleet."
     },
-    "FCT_Planet": {
-      "pk": "PlanetID",
-      "fk": {
-        "SystemID": "FCT_System.SystemID"
-      },
-      "safe_columns": [
-        "PlanetID",
-        "SystemID",
-        "PlanetName"
+    "FCT_Star": {
+      "pk": "StarID",
+      "fk": [
+        "SystemID\u2192FCT_System.SystemID",
+        "GameID\u2192FCT_Game.GameID"
       ],
-      "notes": ""
+      "safe_columns": [
+        "StarID",
+        "SystemID",
+        "GameID",
+        "Name",
+        "Xcor",
+        "Ycor",
+        "Luminosity"
+      ],
+      "notes": "Name is the system/star name shown in-game. Primary star per system has Component=1. Use this for system name lookups, not FCT_System."
+    },
+    "FCT_SystemBody": {
+      "pk": "SystemBodyID",
+      "fk": [
+        "SystemID\u2192FCT_System.SystemID",
+        "StarID\u2192FCT_Star.StarID",
+        "GameID\u2192FCT_Game.GameID"
+      ],
+      "safe_columns": [
+        "SystemBodyID",
+        "SystemID",
+        "StarID",
+        "GameID",
+        "Name",
+        "BodyTypeID",
+        "PlanetNumber",
+        "Gravity",
+        "SurfaceTemp",
+        "AtmosPress",
+        "HydroExt"
+      ],
+      "notes": "All bodies (planets, moons, asteroids, comets) are rows here. BodyTypeID distinguishes them. Name is often empty for uninhabited bodies \u2014 use FCT_Population.PopName for named colonies."
     },
     "FCT_Population": {
       "pk": "PopulationID",
-      "fk": {
-        "RaceID": "FCT_Race.RaceID",
-        "PlanetID": "FCT_Planet.PlanetID",
-        "SystemID": "FCT_System.SystemID"
-      },
+      "fk": [
+        "RaceID\u2192FCT_Race.RaceID",
+        "SystemBodyID\u2192FCT_SystemBody.SystemBodyID",
+        "SystemID\u2192FCT_System.SystemID",
+        "GameID\u2192FCT_Game.GameID"
+      ],
       "safe_columns": [
         "PopulationID",
         "RaceID",
-        "PlanetID",
+        "SystemBodyID",
         "SystemID",
+        "GameID",
+        "PopName",
         "Population"
       ],
-      "notes": "Confirm population unit (thousands vs raw count)."
+      "notes": "No PlanetID column \u2014 use SystemBodyID. Population is raw headcount, not thousands. PopName is the player-assigned colony name."
     },
-    "FCT_TaskGroup": {
-      "pk": "TaskGroupID",
-      "fk": {
-        "RaceID": "FCT_Race.RaceID"
-      },
-      "safe_columns": [
-        "TaskGroupID",
-        "RaceID",
-        "TaskGroupName"
+    "FCT_JumpPoint": {
+      "pk": "WarpPointID",
+      "fk": [
+        "SystemID\u2192FCT_System.SystemID",
+        "GameID\u2192FCT_Game.GameID"
       ],
-      "notes": ""
+      "safe_columns": [
+        "WarpPointID",
+        "SystemID",
+        "GameID",
+        "WPLink",
+        "Distance",
+        "Xcor",
+        "Ycor",
+        "JumpGateStrength"
+      ],
+      "notes": "PK is WarpPointID not JumpPointID. WPLink is the WarpPointID of the paired jump point in the destination system. Distance is km from system centre to this jump point."
+    },
+    "FCT_MineralDeposit": {
+      "pk": null,
+      "fk": [
+        "SystemBodyID\u2192FCT_SystemBody.SystemBodyID",
+        "SystemID\u2192FCT_System.SystemID",
+        "GameID\u2192FCT_Game.GameID"
+      ],
+      "safe_columns": [
+        "GameID",
+        "SystemBodyID",
+        "SystemID",
+        "MaterialID",
+        "Amount",
+        "Accessibility"
+      ],
+      "notes": "No single-column PK \u2014 composite key is GameID+SystemBodyID+MaterialID. No PlanetID column. MaterialID is a positional integer 1-11 mapping to minerals: 1=Duranium, 2=Neutronium, 3=Corbomite, 4=Tritanium, 5=Boronide, 6=Mercassium, 7=Vendarite, 8=Sorium, 9=Uridium, 10=Corundium, 11=Gallicite. No separate FCT_Mineral lookup table exists."
     },
     "FCT_Ship": {
       "pk": "ShipID",
-      "fk": {
-        "TaskGroupID": "FCT_TaskGroup.TaskGroupID",
-        "RaceID": "FCT_Race.RaceID"
-      },
+      "fk": [
+        "FleetID\u2192FCT_Fleet.FleetID",
+        "RaceID\u2192FCT_Race.RaceID",
+        "ShipClassID\u2192FCT_ShipClass.ShipClassID",
+        "GameID\u2192FCT_Game.GameID"
+      ],
       "safe_columns": [
         "ShipID",
+        "GameID",
         "RaceID",
-        "TaskGroupID",
-        "ShipName"
+        "FleetID",
+        "ShipClassID",
+        "ShipName",
+        "Fuel",
+        "Destroyed"
       ],
-      "notes": "Confirm join column to FCT_ShipDesign: ShipDesignID or ClassID."
+      "notes": "FK to fleets is FleetID not TaskGroupID. Join to ship design via ShipClassID not ShipDesignID. No FCT_ShipDesign or FCT_TaskGroup table exists."
     },
-    "FCT_ShipDesign": {
-      "pk": "ShipDesignID",
-      "fk": {
-        "RaceID": "FCT_Race.RaceID"
-      },
+    "FCT_ShipClass": {
+      "pk": "ShipClassID",
+      "fk": [
+        "RaceID\u2192FCT_Race.RaceID",
+        "GameID\u2192FCT_Game.GameID"
+      ],
       "safe_columns": [
-        "ShipDesignID",
+        "ShipClassID",
+        "GameID",
         "RaceID",
-        "ClassName"
+        "ClassName",
+        "Size",
+        "MaxSpeed",
+        "Obsolete",
+        "Commercial",
+        "FighterClass"
       ],
-      "notes": ""
+      "notes": "Components joined via FCT_ClassComponent on ClassID=ShipClassID."
     },
-    "FCT_MineralDeposit": {
-      "pk": "MineralDepositID",
-      "fk": {
-        "PlanetID": "FCT_Planet.PlanetID"
-      },
-      "safe_columns": [
-        "MineralDepositID",
-        "PlanetID",
-        "MineralID",
-        "Amount"
+    "FCT_Fleet": {
+      "pk": "FleetID",
+      "fk": [
+        "RaceID\u2192FCT_Race.RaceID",
+        "SystemID\u2192FCT_System.SystemID",
+        "GameID\u2192FCT_Game.GameID"
       ],
-      "notes": "Confirm mineral name lookup table name."
+      "safe_columns": [
+        "FleetID",
+        "GameID",
+        "RaceID",
+        "SystemID",
+        "FleetName",
+        "Speed",
+        "Xcor",
+        "Ycor"
+      ],
+      "notes": "Ships join via FCT_Ship.FleetID."
     },
-    "FCT_Mineral": {
-      "pk": "MineralID",
-      "fk": {},
-      "safe_columns": [
-        "MineralID",
-        "MineralName"
+    "FCT_ResearchProject": {
+      "pk": "ProjectID",
+      "fk": [
+        "RaceID\u2192FCT_Race.RaceID",
+        "TechID\u2192FCT_TechSystem.TechSystemID",
+        "GameID\u2192FCT_Game.GameID"
       ],
-      "notes": "Lookup table \u2014 no FK."
+      "safe_columns": [
+        "ProjectID",
+        "GameID",
+        "RaceID",
+        "TechID",
+        "Facilities",
+        "ResearchPointsRequired"
+      ],
+      "notes": "Active research queue \u2014 one row per project in progress. For completed techs use FCT_RaceTech."
     },
-    "FCT_Research": {
-      "pk": "ResearchID",
-      "fk": {
-        "RaceID": "FCT_Race.RaceID"
-      },
-      "safe_columns": [
-        "ResearchID",
-        "RaceID"
+    "FCT_RaceTech": {
+      "pk": null,
+      "fk": [
+        "RaceID\u2192FCT_Race.RaceID",
+        "TechID\u2192FCT_TechSystem.TechSystemID",
+        "GameID\u2192FCT_Game.GameID"
       ],
-      "notes": ""
-    },
-    "FCT_JumpPoint": {
-      "pk": "JumpPointID",
-      "fk": {
-        "SystemID": "FCT_System.SystemID"
-      },
       "safe_columns": [
-        "JumpPointID",
-        "SystemID"
+        "GameID",
+        "RaceID",
+        "TechID",
+        "Obsolete"
       ],
-      "notes": "Check for self-referencing FK to destination SystemID."
+      "notes": "Composite key GameID+RaceID+TechID. One row per technology the empire has researched. Obsolete=1 means superseded but still held. Join to FCT_TechSystem on TechID=TechSystemID for tech names."
     }
   },
   "queries": {
@@ -159,7 +236,7 @@
         "FCT_Game",
         "FCT_Race"
       ],
-      "notes": "Column names need verification on first boot.",
+      "notes": "After confirming the session, inform the user that query results are limited to 200 rows by default to keep responses concise, and ask whether they would like to disable that limit for this session. If they say yes, use limit_query: false on all subsequent tool calls.",
       "verified": true,
       "added": "2026-05-12"
     },
@@ -413,6 +490,109 @@
       "notes": "This entry serves as a spoiler guardrail. Any session that loads the query registry will see this entry and know to pause and verify with the player before running queries against non-player race data.",
       "verified": true,
       "added": "2026-05-14"
+    },
+    "alien_race_contact_roster": {
+      "description": "Lists all alien races known to the empire, with their contact status (Detected vs Known), communication status, when first detected, diplomatic points, and treaty flags. ContactStatus 0 = Known, 1 = Detected only. CommStatus 1 = No comms, 2 = Comms established.",
+      "params": [],
+      "sql": "\nSELECT\n  ar.AlienRaceID,\n  ar.AlienRaceName,\n  ar.Abbrev,\n  CASE ar.ContactStatus WHEN 0 THEN 'Known' WHEN 1 THEN 'Detected' ELSE 'Unknown' END AS ContactStatus,\n  CASE ar.CommStatus\n    WHEN 1 THEN 'No Contact'\n    WHEN 2 THEN 'Established'\n    ELSE 'Other'\n  END AS CommunicationStatus,\n  ROUND(ar.FirstDetected / 86400.0, 2) AS FirstDetectedDays,\n  ROUND(ar.CommEstablished / 86400.0, 2) AS CommEstablishedDays,\n  ROUND(ar.DiplomaticPoints, 2) AS DiplomaticPoints,\n  ar.AlienRaceIntelligencePoints AS IntelPoints,\n  CASE ar.TradeTreaty WHEN 1 THEN 'Yes' ELSE 'No' END AS TradeTreaty,\n  CASE ar.TechTreaty WHEN 1 THEN 'Yes' ELSE 'No' END AS TechTreaty,\n  CASE ar.GeoTreaty WHEN 1 THEN 'Yes' ELSE 'No' END AS GeoTreaty,\n  CASE ar.GravTreaty WHEN 1 THEN 'Yes' ELSE 'No' END AS GravTreaty\nFROM FCT_AlienRace ar\nWHERE ar.GameID = :game_id\n  AND ar.ViewRaceID = :race_id\nORDER BY ar.ContactStatus ASC, ar.DiplomaticPoints ASC\n",
+      "tables_used": [
+        "FCT_AlienRace"
+      ],
+      "notes": "ContactStatus: 0=Known (full intel screen), 1=Detected (flag shown in UI). CommStatus: 1=No comms, 2=Established. FirstDetectedDays and CommEstablishedDays are in Aurora game-days from epoch \u2014 divide by 365.25 for approximate years. DiplomaticPoints negative = hostile.",
+      "verified": true,
+      "added": "2026-05-15",
+      "updated": "2026-05-15"
+    },
+    "alien_species_autopsy": {
+      "description": "Species autopsy data for a given alien race \u2014 habitat tolerances only (gravity, temperature, oxygen, pressure). Only returns data if the empire has completed an autopsy (KnownSpecies.Status = 1). Personality traits (militancy, xenophobia, etc.) are intentionally excluded as they are never visible to the player in Aurora.",
+      "params": [
+        "alien_race_id"
+      ],
+      "sql": "\nSELECT\n  s.SpeciesName,\n  CASE ks.Status WHEN 1 THEN 'Complete' ELSE 'Not Yet Performed' END AS AutopsyLabel,\n  ROUND(s.Gravity - s.GravDev, 2) AS GravityMin_G,\n  ROUND(s.Gravity + s.GravDev, 2) AS GravityMax_G,\n  ROUND(s.Temperature - s.TempDev - 273.15, 1) AS TempMin_C,\n  ROUND(s.Temperature + s.TempDev - 273.15, 1) AS TempMax_C,\n  ROUND(s.Oxygen - s.OxyDev, 4) AS OxygenMin_atm,\n  ROUND(s.Oxygen + s.OxyDev, 4) AS OxygenMax_atm,\n  0.0 AS PressureMin_atm,\n  ROUND(s.PressMax, 2) AS PressureMax_atm\nFROM FCT_KnownSpecies ks\nJOIN FCT_Species s ON s.SpeciesID = ks.SpeciesID AND s.GameID = :game_id\nJOIN FCT_AlienRaceSpecies ars\n  ON ars.SpeciesID = ks.SpeciesID\n  AND ars.AlienRaceID = :alien_race_id\n  AND ars.DetectRaceID = :race_id\n  AND ars.GameID = :game_id\nWHERE ks.GameID = :game_id\n  AND ks.ViewRaceID = :race_id\n  AND ks.Status = 1\n",
+      "tables_used": [
+        "FCT_KnownSpecies",
+        "FCT_Species",
+        "FCT_AlienRaceSpecies"
+      ],
+      "notes": "Status=1 means autopsy complete. DetectRaceID = :race_id prevents duplicate rows when multiple races have detected the same species. Temperature stored in Kelvin \u2014 subtract 273.15 for Celsius. Only habitat tolerance ranges are returned \u2014 personality traits (Militancy, Xenophobia, Expansionism, Determination, Diplomacy, Trade) are internal NPR data the player cannot see in Aurora and must never be exposed.",
+      "verified": true,
+      "added": "2026-05-15",
+      "updated": "2026-05-15"
+    },
+    "alien_class_capabilities": {
+      "description": "Ship class capabilities for a given alien race: hull stats, weapons with names and ranges, and observed technology. Weapons and tech are returned as separate rows per class \u2014 no cross-join between them. Use ClassName to group results.",
+      "params": [
+        "alien_race_id"
+      ],
+      "sql": "\n-- Weapons per class\nSELECT\n  'WEAPON' AS ResultType,\n  ac.ClassName,\n  ac.ShipCount,\n  ac.MaxSpeed AS MaxSpeed_kms,\n  ac.TCS,\n  ac.ThermalSignature,\n  ac.ArmourStrength,\n  ac.ShieldStrength,\n  ac.EngineType,\n  ac.AlienClassRole,\n  ac.ActiveJammerStrength,\n  ac.FireControlJammerStrength,\n  ac.MissileJammerStrength,\n  ts_w.Name AS Detail,\n  acw.Amount AS Count,\n  ROUND(acw.Range / 1000.0, 0) AS Range_km,\n  acw.ROF\nFROM FCT_AlienClass ac\nJOIN FCT_AlienClassWeapon acw ON acw.AlienClassID = ac.AlienClassID AND acw.GameID = ac.GameID\nLEFT JOIN FCT_TechSystem ts_w ON ts_w.TechSystemID = acw.WeaponID\nWHERE ac.GameID = :game_id AND ac.ViewRaceID = :race_id AND ac.AlienRaceID = :alien_race_id\n\nUNION ALL\n\n-- Technology per class\nSELECT\n  'TECH' AS ResultType,\n  ac.ClassName,\n  ac.ShipCount,\n  ac.MaxSpeed AS MaxSpeed_kms,\n  ac.TCS,\n  ac.ThermalSignature,\n  ac.ArmourStrength,\n  ac.ShieldStrength,\n  ac.EngineType,\n  ac.AlienClassRole,\n  ac.ActiveJammerStrength,\n  ac.FireControlJammerStrength,\n  ac.MissileJammerStrength,\n  ts_t.Name AS Detail,\n  NULL AS Count,\n  NULL AS Range_km,\n  NULL AS ROF\nFROM FCT_AlienClass ac\nJOIN FCT_AlienClassTech act ON act.AlienClassID = ac.AlienClassID AND act.GameID = ac.GameID\nLEFT JOIN FCT_TechSystem ts_t ON ts_t.TechSystemID = act.TechID\nWHERE ac.GameID = :game_id AND ac.ViewRaceID = :race_id AND ac.AlienRaceID = :alien_race_id\n\nORDER BY ClassName, ResultType, Range_km DESC\n",
+      "tables_used": [
+        "FCT_AlienClass",
+        "FCT_AlienClassWeapon",
+        "FCT_AlienClassTech",
+        "FCT_TechSystem"
+      ],
+      "notes": "EngineType: 1=Conventional/Thermal, 2=Commercial Nuclear, 3=Military. AlienClassRole: 0=Unknown, 2=Combat, 3=Support, 4=PDC. WeaponRange in km. TechName from FCT_TechSystem. ResultType distinguishes weapon rows from tech rows. ShipCount = total hulls of this class ever observed.",
+      "verified": true,
+      "added": "2026-05-15",
+      "updated": "2026-05-15"
+    },
+    "alien_ship_roster": {
+      "description": "Individual ship roster for a given alien race: each known hull by name, class, destroyed status, damage taken, last known system (resolved to empire colony name where possible), and last contact date in game-days.",
+      "params": [
+        "alien_race_id"
+      ],
+      "sql": "\nSELECT\n  als.Name AS ShipName,\n  ac.ClassName,\n  als.Speed AS LastObservedSpeed_kms,\n  CASE als.Destroyed WHEN 1 THEN 'Destroyed' ELSE 'Active' END AS Status,\n  CASE als.Salvaged  WHEN 1 THEN 'Yes' ELSE 'No' END AS Salvaged,\n  ROUND(als.DamageTaken, 1) AS DamageTaken,\n  als.ArmourDamage,\n  als.PenetratingDamage,\n  COALESCE(sys_name.PopName, 'System #' || als.LastSysID) AS LastKnownSystem,\n  als.LastSysID,\n  ROUND(als.LastContactTime / 86400.0, 1) AS LastContactDays,\n  ROUND(als.FirstDetected / 86400.0, 1) AS FirstDetectedDays\nFROM FCT_AlienShip als\nJOIN FCT_AlienClass ac\n  ON ac.AlienClassID = als.AlienClassID AND ac.GameID = als.GameID\nLEFT JOIN (\n  SELECT SystemID, PopName,\n         ROW_NUMBER() OVER (PARTITION BY SystemID ORDER BY Population DESC) AS rn\n  FROM FCT_Population\n  WHERE GameID = :game_id AND RaceID = :race_id\n) sys_name ON sys_name.SystemID = als.LastSysID AND sys_name.rn = 1\nWHERE als.GameID = :game_id\n  AND als.ViewRaceID = :race_id\n  AND als.AlienRaceID = :alien_race_id\nORDER BY als.Destroyed ASC, als.LastContactTime DESC\n",
+      "tables_used": [
+        "FCT_AlienShip",
+        "FCT_AlienClass",
+        "FCT_Population"
+      ],
+      "notes": "Destroyed=1 means confirmed destroyed. DamageTaken/ArmourDamage/PenetratingDamage track combat damage the empire has inflicted. LastContactDays is Aurora game-days from epoch. System names resolved from the empire's largest colony in that system; unnamed/unexplored systems show as 'System #ID'. Salvaged=1 means wreck was recovered.",
+      "verified": true,
+      "added": "2026-05-15",
+      "updated": "2026-05-15"
+    },
+    "_conventions": {
+      "description": "CONVENTION RULES \u2014 read before registering or naming any query. All query names, descriptions, and notes must use 'empire' to refer to the player faction \u2014 never any in-game faction name. Queries describe what data they return in generic Aurora terms, not campaign-specific lore. This keeps tools portable if the campaign faction is renamed or the skill is reused.",
+      "params": [],
+      "sql": "SELECT 'This entry contains no SQL \u2014 it is a conventions record only.' AS notice",
+      "tables_used": [],
+      "notes": "NAMING: snake_case, no faction names, no lore terms. Use: empire, player race, colony, ship, fleet. Avoid: any NPC race name. DESCRIPTIONS: generic Aurora data descriptions only \u2014 what columns are returned and what they mean. NOTES: include unit conversions, enum decode tables, and any player-visibility warnings (e.g. data the player cannot see in the Aurora UI must be flagged and excluded). SPOILERS: never expose internal NPR attributes (militancy, xenophobia, expansionism, determination, diplomacy, trade, production rates, research rates) \u2014 these are not visible to the player in any Aurora screen.",
+      "verified": true,
+      "added": "2026-05-15"
+    },
+    "DRAFT_tech_gen_status": {
+      "description": "For every tech slot used in empire ship components, shows whether the tech is current gen (highest researched in its chain), a prior gen, or reveals the immediate next researchable tier. Never shows tiers beyond next \u2014 spoiler-safe. Use to assess component upgrade opportunities.",
+      "params": [],
+      "sql": "\nWITH researched AS (\n  SELECT TechID FROM FCT_RaceTech WHERE RaceID = :race_id AND GameID = :game_id\n),\nused_techs AS (\n  SELECT DISTINCT c.BGTech1 as TechID FROM FCT_ShipDesignComponents c\n  JOIN FCT_ClassComponent cc ON cc.ComponentID = c.SDComponentID AND cc.GameID = c.GameID\n  JOIN FCT_ShipClass sc ON sc.ShipClassID = cc.ClassID AND sc.GameID = cc.GameID\n  WHERE c.GameID = :game_id AND sc.RaceID = :race_id AND c.BGTech1 != 0\n  UNION SELECT DISTINCT c.BGTech2 FROM FCT_ShipDesignComponents c\n  JOIN FCT_ClassComponent cc ON cc.ComponentID = c.SDComponentID AND cc.GameID = c.GameID\n  JOIN FCT_ShipClass sc ON sc.ShipClassID = cc.ClassID AND sc.GameID = cc.GameID\n  WHERE c.GameID = :game_id AND sc.RaceID = :race_id AND c.BGTech2 != 0\n  UNION SELECT DISTINCT c.BGTech3 FROM FCT_ShipDesignComponents c\n  JOIN FCT_ClassComponent cc ON cc.ComponentID = c.SDComponentID AND cc.GameID = c.GameID\n  JOIN FCT_ShipClass sc ON sc.ShipClassID = cc.ClassID AND sc.GameID = cc.GameID\n  WHERE c.GameID = :game_id AND sc.RaceID = :race_id AND c.BGTech3 != 0\n  UNION SELECT DISTINCT c.BGTech4 FROM FCT_ShipDesignComponents c\n  JOIN FCT_ClassComponent cc ON cc.ComponentID = c.SDComponentID AND cc.GameID = c.GameID\n  JOIN FCT_ShipClass sc ON sc.ShipClassID = cc.ClassID AND sc.GameID = cc.GameID\n  WHERE c.GameID = :game_id AND sc.RaceID = :race_id AND c.BGTech4 != 0\n)\nSELECT\n  t.TechSystemID,\n  t.Name as TechName,\n  t.AdditionalInfo as Value,\n  CASE WHEN r.TechID IS NOT NULL THEN 1 ELSE 0 END as IsResearched,\n  CASE\n    WHEN r.TechID IS NOT NULL\n     AND NOT EXISTS (\n       SELECT 1 FROM FCT_TechSystem t2\n       JOIN researched r2 ON r2.TechID = t2.TechSystemID\n       WHERE t2.Prerequisite1 = t.TechSystemID\n     ) THEN 1 ELSE 0\n  END as IsCurrentGen,\n  next_t.TechSystemID as NextTechID,\n  next_t.Name as NextTechName,\n  next_t.AdditionalInfo as NextTechValue,\n  next_t.DevelopCost as NextTechCost\nFROM used_techs ut\nJOIN FCT_TechSystem t ON t.TechSystemID = ut.TechID\nLEFT JOIN researched r ON r.TechID = t.TechSystemID\nLEFT JOIN FCT_TechSystem next_t ON next_t.Prerequisite1 = t.TechSystemID\n  AND NOT EXISTS (SELECT 1 FROM researched r3 WHERE r3.TechID = next_t.TechSystemID)\nORDER BY t.Name, t.AdditionalInfo\n",
+      "tables_used": [
+        "FCT_RaceTech",
+        "FCT_TechSystem",
+        "FCT_ShipDesignComponents",
+        "FCT_ClassComponent",
+        "FCT_ShipClass"
+      ],
+      "notes": "\nIsCurrentGen=1 means highest researched tier in that tech line used by an empire component.\nNextTechName/Value shows only the immediate next researchable tier \u2014 never beyond (spoiler-safe).\nAll techs shown are already researched by definition (used in existing components).\nTech lines with no NextTechID either have no further tiers or are already at the frontier.\nBGTech5-7 slots not yet included \u2014 add UNION blocks if needed for those component types.\n",
+      "verified": false,
+      "added": "2026-05-15",
+      "updated": "2026-05-15"
+    },
+    "DRAFT_empire_components_by_type": {
+      "description": "Returns all empire ship components filtered by type, with BGTech tech slot names and values resolved via FCT_TechSystem. Pass component_type_id=0 for all types.",
+      "params": [
+        "component_type_id"
+      ],
+      "sql": "\nSELECT DISTINCT\n  ct.TypeDescription as ComponentType,\n  ct.ComponentTypeID,\n  c.SDComponentID,\n  c.Name,\n  c.Size,\n  c.Cost,\n  c.ComponentValue,\n  c.Resolution,\n  c.MaxSensorRange,\n  c.HTK,\n  c.Crew,\n  c.BGTech1, c.BGTech2, c.BGTech3, c.BGTech4, c.BGTech5, c.BGTech6, c.BGTech7,\n  t1.Name as Tech1Name, t1.AdditionalInfo as Tech1Val,\n  t2.Name as Tech2Name, t2.AdditionalInfo as Tech2Val,\n  t3.Name as Tech3Name, t3.AdditionalInfo as Tech3Val,\n  t4.Name as Tech4Name, t4.AdditionalInfo as Tech4Val,\n  t5.Name as Tech5Name, t5.AdditionalInfo as Tech5Val,\n  t6.Name as Tech6Name, t6.AdditionalInfo as Tech6Val,\n  t7.Name as Tech7Name, t7.AdditionalInfo as Tech7Val\nFROM FCT_ShipDesignComponents c\nJOIN FCT_ClassComponent cc ON cc.ComponentID = c.SDComponentID AND cc.GameID = c.GameID\nJOIN FCT_ShipClass sc ON sc.ShipClassID = cc.ClassID AND sc.GameID = cc.GameID\nJOIN DIM_ComponentType ct ON ct.ComponentTypeID = c.ComponentTypeID\nLEFT JOIN FCT_TechSystem t1 ON c.BGTech1 = t1.TechSystemID\nLEFT JOIN FCT_TechSystem t2 ON c.BGTech2 = t2.TechSystemID\nLEFT JOIN FCT_TechSystem t3 ON c.BGTech3 = t3.TechSystemID\nLEFT JOIN FCT_TechSystem t4 ON c.BGTech4 = t4.TechSystemID\nLEFT JOIN FCT_TechSystem t5 ON c.BGTech5 = t5.TechSystemID\nLEFT JOIN FCT_TechSystem t6 ON c.BGTech6 = t6.TechSystemID\nLEFT JOIN FCT_TechSystem t7 ON c.BGTech7 = t7.TechSystemID\nWHERE c.GameID = :game_id\n  AND sc.RaceID = :race_id\n  AND (:component_type_id = 0 OR c.ComponentTypeID = :component_type_id)\nGROUP BY c.Name, c.Size, c.ComponentValue, c.Resolution,\n         c.BGTech1, c.BGTech2, c.BGTech3, c.BGTech4, c.BGTech5, c.BGTech6, c.BGTech7\nORDER BY ct.ClassDisplayOrder, c.Size, c.ComponentValue\n",
+      "tables_used": [
+        "FCT_ShipDesignComponents",
+        "FCT_ClassComponent",
+        "FCT_ShipClass",
+        "DIM_ComponentType",
+        "FCT_TechSystem"
+      ],
+      "notes": "\nRace filtering is critical \u2014 FCT_ShipDesignComponents has no RaceID. Must join through FCT_ClassComponent -> FCT_ShipClass to get RaceID.\nPass component_type_id = 0 to return all types.\n\nBGTech slot meanings confirmed:\n\nActive Sensors:\n  BGTech1 = Active Grav Sensor Strength\n  BGTech2 = EM Sensor Sensitivity\n  BGTech3 = Electronic Hardening Level\n  BGTech4 = ECCM level\n\nMissile Fire Control (identical layout to Active Sensors):\n  BGTech1 = Active Grav Sensor Strength\n  BGTech2 = EM Sensor Sensitivity\n  BGTech3 = Electronic Hardening Level\n  BGTech4 = ECCM level\n\nPassive - EM:\n  BGTech1 = EM Sensor Sensitivity\n  BGTech2 = Electronic Hardening Level\n  BGTech3/4 = unused\n  NOTE: Sensor Size is the component Size field, NOT a BGTech slot.\n\nPassive - Thermal:\n  BGTech1 = Thermal Sensor Sensitivity\n  BGTech2 = Electronic Hardening Level\n  BGTech3/4 = unused\n  NOTE: Sensor Size is the component Size field, NOT a BGTech slot.\n\nLasers:\n  BGTech1 = Focal size\n  BGTech2 = Wavelength / damage type\n  BGTech3 = Capacitor recharge rate\n  BGTech4 = Size modifier (standard/reduced)\n  BGTech5 = Mount type (standard/spinal/turret)\n\nMissile Launchers:\n  BGTech1 = Reload rate\n  BGTech2 = Launcher size type (standard/reduced/box)\n\nCloaking Device:\n  BGTech1 = Cloaking Efficiency\n  BGTech2 = Cloak Sensor Reduction %\n  BGTech3-6 = unused\n  NOTE: Max Ship Size is the component Size field, NOT a BGTech slot.\n\nDirect Fire Control:\n  BGTech1 = Fire Control Range (km)\n  BGTech2 = Fire Control Speed Rating / tracking speed (km/s)\n  BGTech3/4 = unused (skipped)\n  BGTech5 = Electronic Hardening Level\n  BGTech6 = ECCM level\n\nEngine:\n  BGTech1 = Drive type (Ion / MCF / ICF / Magneto-plasma / Nuclear Gas-Core etc.)\n  BGTech2 = Fuel consumption (litres per engine power hour)\n  BGTech3 = Thermal reduction / signature modifier\n  BGTech4-7 = unused\n  NOTE: Engine Power and Engine Size are separate columns, not BGTech slots.\n\nGauss Cannon:\n  BGTech1 = Rate of Fire\n  BGTech2 = Launch Velocity (range modifier, km)\n  BGTech3 = Size vs Accuracy (HS size and accuracy %)\n  BGTech4 = Turret Tracking Speed \u2014 present only on turret mounts, 0 on fixed\n  BGTech5 = unused\n\nShields:\n  BGTech1 = Shield technology tier (Delta / Epsilon / Theta etc.)\n  BGTech2 = Shield Regeneration Rate\n  BGTech3/4 = unused\n  NOTE: Shield Strength and Size are separate columns.\n\nReactor / Power Plant:\n  BGTech1 = Reactor technology type (Magnetic Mirror / Tokamak / Stellarator / Solid-core Antimatter etc.)\n  BGTech2 = Power Plant Boost level (no boost / 10% / 20% etc.)\n  BGTech3-6 = unused\n  NOTE: Power output and Size are separate columns.\n\nMagazine:\n  BGTech1 = Magazine Feed System Efficiency\n  BGTech2 = Magazine Neutralization System (% chance)\n  BGTech3 = Internal Armour type\n  BGTech4-6 = unused\n\nJump Drive:\n  BGTech1 = Base Jump Drive Efficiency\n  BGTech2 = Max Jump Squadron Size\n  BGTech3 = Max Squadron Jump Radius (k km)\n  BGTech4 = Military vs Commercial flag\n  BGTech5/6 = unused\n  NOTE: Jump Capacity in tons comes from Size math, not a BGTech slot.\n\nStill to map: Particle Beams, Railguns, CIWS, EW Systems.\n\nAdditionalInfo on FCT_TechSystem holds the numeric value of the tech level.\nMaxSensorRange is in km \u2014 divide by 1,000,000 for Mkm display.\n",
+      "verified": false,
+      "added": "2026-05-15"
     }
   }
 }

@@ -26,7 +26,7 @@ from jump_network import (
 _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 QUERIES_PATH = os.path.join(_SCRIPT_DIR, "queries.json")
 DB_PATH = os.environ.get("AURORA_DB_PATH", os.path.join(_SCRIPT_DIR, "Aurora.db"))
-MAX_ROWS = int(os.environ.get("AURORA_MAX_ROWS", "200"))
+MAX_ROWS = 200
 
 # ---------------------------------------------------------------------------
 # Module-level state
@@ -115,6 +115,26 @@ def rows_to_markdown(columns: list[str], rows: list) -> str:
     return "\n".join([header, sep, body])
 
 
+def fetch_rows(cursor: sqlite3.Cursor, limit_query: bool) -> tuple[list, bool]:
+    """Return (rows, truncated). Fetches MAX_ROWS+1 to detect truncation without a DB LIMIT."""
+    if not limit_query:
+        return cursor.fetchall(), False
+    rows = cursor.fetchmany(MAX_ROWS + 1)
+    if len(rows) > MAX_ROWS:
+        return rows[:MAX_ROWS], True
+    return rows, False
+
+
+def render(columns: list[str], rows: list, truncated: bool) -> str:
+    result = rows_to_markdown(columns, rows)
+    if truncated:
+        result += (
+            f"\n\n> **Results truncated at {MAX_ROWS} rows.** "
+            "Set `limit_query: false` to retrieve the full result set at the cost of more tokens."
+        )
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Safety checks
 # ---------------------------------------------------------------------------
@@ -149,7 +169,7 @@ def sql_references_unsafe_table(sql: str) -> str | None:
 # Query execution
 # ---------------------------------------------------------------------------
 
-def execute_registered_query(name: str, user_params: dict[str, str]) -> str:
+def execute_registered_query(name: str, user_params: dict[str, str], limit_query: bool = True) -> str:
     try:
         ctx = ensure_context()
     except RuntimeError as e:
@@ -166,8 +186,8 @@ def execute_registered_query(name: str, user_params: dict[str, str]) -> str:
         try:
             cursor = conn.execute(query["sql"], params)
             columns = [d[0] for d in cursor.description]
-            rows = cursor.fetchmany(MAX_ROWS)
-            return rows_to_markdown(columns, rows)
+            rows, truncated = fetch_rows(cursor, limit_query)
+            return render(columns, rows, truncated)
         finally:
             conn.close()
     except sqlite3.OperationalError as e:
@@ -189,6 +209,16 @@ async def list_tools() -> list[Tool]:
     _queries = load_queries()
     tools: list[Tool] = []
 
+    _long_param = {
+        "limit_query": {
+            "type": "boolean",
+            "description": (
+                f"Default true — caps results at {MAX_ROWS} rows. "
+                "Set false to retrieve the full result set at the cost of more tokens."
+            ),
+        }
+    }
+
     # --- registered query tools ---
     for name, q in _queries.get("queries", {}).items():
         desc = q["description"]
@@ -198,6 +228,7 @@ async def list_tools() -> list[Tool]:
         properties: dict[str, Any] = {}
         for param in q.get("params", []):
             properties[param] = {"type": "string", "description": param}
+        properties.update(_long_param)
 
         tools.append(Tool(
             name=name,
@@ -216,12 +247,13 @@ async def list_tools() -> list[Tool]:
             "Execute arbitrary read-only SQL against the Aurora database. "
             "Use for exploration and one-off queries — no registration needed. "
             "The variables :game_id and :race_id are automatically available in your SQL. "
-            "Results capped at AURORA_MAX_ROWS rows."
+            f"Results capped at {MAX_ROWS} rows by default; set limit_query=false to retrieve all rows."
         ),
         inputSchema={
             "type": "object",
             "properties": {
                 "sql": {"type": "string", "description": "Full SQL query to execute. May reference :game_id and :race_id."},
+                **_long_param,
             },
             "required": ["sql"],
         },
@@ -385,9 +417,11 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
 
 
 def _dispatch(name: str, args: dict) -> str:
+    limit_query = bool(args.get("limit_query", True))
+
     # introspection
     if name == "execute_sql":
-        return _tool_execute_sql(args.get("sql", ""))
+        return _tool_execute_sql(args.get("sql", ""), limit_query=limit_query)
     if name == "describe_table":
         return _tool_describe_table(args.get("table_name", ""))
     if name == "list_all_tables":
@@ -413,7 +447,7 @@ def _dispatch(name: str, args: dict) -> str:
     if name in _queries.get("queries", {}):
         query = _queries["queries"][name]
         user_params = {p: args.get(p, "") for p in query.get("params", [])}
-        return execute_registered_query(name, user_params)
+        return execute_registered_query(name, user_params, limit_query=limit_query)
 
     return f"Unknown tool: '{name}'"
 
@@ -422,7 +456,7 @@ def _dispatch(name: str, args: dict) -> str:
 # Introspection tool implementations
 # ---------------------------------------------------------------------------
 
-def _tool_execute_sql(sql: str) -> str:
+def _tool_execute_sql(sql: str, limit_query: bool = True) -> str:
     if not sql.strip():
         return "sql is required."
     try:
@@ -436,8 +470,8 @@ def _tool_execute_sql(sql: str) -> str:
             if cursor.description is None:
                 return "Query executed but returned no columns."
             columns = [d[0] for d in cursor.description]
-            rows = cursor.fetchmany(MAX_ROWS)
-            return rows_to_markdown(columns, rows)
+            rows, truncated = fetch_rows(cursor, limit_query)
+            return render(columns, rows, truncated)
         finally:
             conn.close()
     except sqlite3.OperationalError as e:
@@ -706,7 +740,7 @@ async def main():
     print(f"Aurora 4x MCP server starting", file=sys.stderr)
     print(f"  DB path   : {DB_PATH}", file=sys.stderr)
     print(f"  Queries   : {query_count} registered", file=sys.stderr)
-    print(f"  Max rows  : {MAX_ROWS}", file=sys.stderr)
+    print(f"  Max rows  : {MAX_ROWS} (set limit_query=false to disable)", file=sys.stderr)
     print(f"Waiting for MCP host (Claude Desktop)...", file=sys.stderr)
     init_options = InitializationOptions(
         server_name="aurora4x",

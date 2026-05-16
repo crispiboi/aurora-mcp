@@ -1,14 +1,28 @@
 # Aurora 4x MCP Server
 
-A read-only MCP (Model Context Protocol) server that lets Claude query your Aurora 4x campaign database directly. Claude can look up colonies, fleets, minerals, commanders, ordnance, and more — and can register, edit, and promote new queries against your live DB without restarting.
+A read-only MCP (Model Context Protocol) server that lets Claude query your Aurora 4x campaign database directly. Claude can look up colonies, fleets, minerals, commanders, ordnance, and more. It can register, edit, and promote new queries against your live DB without restarting. You can have natural language conversations with the LLM about your game state, ask for reports, and do analysis across the board.
 
 AI/LLM DISCLAIMER: This tool was generated with the assistance of claude code by a user who has a solid grasp on the game. This tool is built specificially to query the DB, and nothing else. If you write to the DB you may cause unintended consquence and will not be able to receive support by the larger community.
+
+---
+
+## Getting started
+
+Once the server is connected, start a new Claude Code session and say:
+
+> Please verify my current game and give me a description of the available tools.
+
+Claude will call `get_session_context` to confirm the right campaign is loaded, let you know that query results are limited to 200 rows by default, and ask whether you'd like to disable that limit for the session. It will then summarize what each tool does. From there you can ask natural-language questions about your empire — minerals, colonies, fleets, commanders, ordnance — and Claude will pick the right tools automatically.
+
+---
 
 ## Prerequisites
 
 - Python 3.10 or later
 - Aurora 4x installed with at least one active campaign saved
 - [Claude Code](https://claude.ai/code) or Claude Desktop
+
+---
 
 ## Installation
 
@@ -50,35 +64,15 @@ D:\Aurora\AuroraDB.db    ← example; your install path may differ
 
 You must set `AURORA_DB_PATH` to this file's full path in the config below. There is no default that will work out of the box.
 
----
+### 4. Connect to Claude Desktop / Claude Code
 
-## Getting started
-
-Once the server is connected, start a new Claude Code session and say:
-
-> Please verify my current game and give me a description of the available tools.
-
-Claude will call `get_session_context` to confirm the right campaign is loaded, then summarize what each tool does. From there you can ask natural-language questions about your empire — minerals, colonies, fleets, commanders, ordnance — and Claude will pick the right tools automatically.
-
----
-
-## Connecting to Claude Code
-
-This is the step most people find tricky. You need to edit Claude Code's MCP configuration file manually.
-
-### Find the config file
-
-Open a terminal and run:
+Edit the MCP configuration file:
 
 ```powershell
-notepad "$env:APPDATA\Claude\claude_code_config.json"
+notepad "$env:APPDATA\Claude\claude_desktop_config.json"
 ```
 
-If the file doesn't exist yet, create it.
-
-### Add the MCP server entry
-
-Paste the following into the JSON, replacing the paths with your actual paths:
+If the file doesn't exist yet, create it. Add the following, replacing the paths with your actual paths:
 
 ```json
 {
@@ -89,8 +83,7 @@ Paste the following into the JSON, replacing the paths with your actual paths:
         "D:/Aurora/aurora-mcp/server.py"
       ],
       "env": {
-        "AURORA_DB_PATH": "D:/Aurora/AuroraDB.db",
-        "AURORA_MAX_ROWS": "200"
+        "AURORA_DB_PATH": "D:/Aurora/AuroraDB.db"
       }
     }
   }
@@ -101,13 +94,9 @@ Paste the following into the JSON, replacing the paths with your actual paths:
 
 > **If you already have other MCP servers** in your config, add the `"aurora4x"` block inside the existing `"mcpServers"` object — don't create a second one.
 
-### Restart Claude Code
+### 5. Restart and verify
 
-Close and reopen Claude Code. The `aurora4x` MCP server will appear in the tool list on the next session start.
-
-### Verify the connection
-
-In a new Claude Code session, ask:
+Close and reopen Claude Desktop / Claude Code. In a new session, ask:
 
 > Call `get_session_context` to confirm the right campaign is loaded.
 
@@ -120,7 +109,6 @@ Claude should return your GameID, GameName, RaceID, and RaceName. If it does, yo
 | Variable | Default | Description |
 | --- | --- | --- |
 | `AURORA_DB_PATH` | `Aurora.db` next to `server.py` | Full path to `AuroraDB.db` |
-| `AURORA_MAX_ROWS` | `200` | Maximum rows returned per query |
 
 ---
 
@@ -130,7 +118,7 @@ Claude should return your GameID, GameName, RaceID, and RaceName. If it does, yo
 
 | Tool | Description |
 | --- | --- |
-| `execute_sql` | Run any read-only SQL directly. `:game_id` and `:race_id` are automatically available as bind parameters. Results capped at `AURORA_MAX_ROWS`. Use this for exploration and one-off queries before registering them. |
+| `execute_sql` | Run any read-only SQL directly. `:game_id` and `:race_id` are automatically available as bind parameters. Results are capped at 200 rows by default — set `limit_query: false` to retrieve the full result set at the cost of more tokens. Use this for exploration and one-off queries before registering them. |
 
 ### Introspection
 
@@ -160,7 +148,9 @@ Claude should return your GameID, GameName, RaceID, and RaceName. If it does, yo
 
 ### Registered queries
 
-Queries are stored in `queries.json` and loaded on every request — no restart needed after changes.
+Queries are stored in `queries.json` and loaded on every request — no restart needed after changes. All registered queries also accept `limit_query: false` to bypass the 200-row cap.
+
+**Empire**
 
 | Query | Params | Description |
 | --- | --- | --- |
@@ -179,6 +169,26 @@ Queries are stored in `queries.json` and loaded on every request — no restart 
 | `colony_ordnance_stockpiles` | `missile_name` | Missile stockpiles held at colonies — stock count, size, and key combat stats |
 | `ship_ordnance_status` | — | Per-ship ordnance status — loaded vs template vs deficit, with ship location and collier flag |
 | `system_distances` | `source_system_id`, `destination_system_id`, `fleet_name` | Shortest route between two systems with hop-by-hop distance and per-class fuel cost |
+
+**Alien intelligence**
+
+> These queries expose information about other races and may reveal spoilers. `SPOILER_GUARD_other_races` should be called first to confirm the player wants to proceed.
+
+| Query | Params | Description |
+| --- | --- | --- |
+| `SPOILER_GUARD_other_races` | — | Lists all non-player races in the game. Call before any alien query to confirm the player wants to view potentially spoiler information. |
+| `alien_race_contact_roster` | — | All alien races known to the empire — contact status, comms status, first detected date, diplomatic points, and treaty flags |
+| `alien_species_autopsy` | `alien_race_id` | Habitat tolerances (gravity, temperature, oxygen, pressure) for a given alien species. Only returns data if an autopsy has been completed. |
+| `alien_class_capabilities` | `alien_race_id` | Observed ship class capabilities — hull stats, weapons with ranges, and detected technology |
+| `alien_ship_roster` | `alien_race_id` | Individual alien hulls by name and class — status, damage taken, last known system, and last contact date |
+
+---
+
+## Row limits
+
+All query tools cap results at **200 rows** by default. This is a fixed limit — it cannot be changed in config. When results are truncated, the response will include a notice.
+
+To retrieve the full result set, pass `limit_query: false` on any tool call. This bypasses the cap entirely and may return a large number of rows, consuming significantly more tokens.
 
 ---
 
@@ -201,10 +211,6 @@ delete_query         ← remove broken or superseded drafts
 ---
 
 ## Important: save before querying
-
-Aurora 4x holds an exclusive write lock on `AuroraDB.db` while the game is running. The server connects read-only and will return:
-
-> Aurora database is locked. Save the game first.
 
 ---
 
